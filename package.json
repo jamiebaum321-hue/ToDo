@@ -1,0 +1,61 @@
+{
+  "name": "todo-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ToDo \u2014 an agent-filled task inbox. Your Claude or ChatGPT subscription connects over MCP, triages every connector into four buckets, and this app makes each task one tap away from done.",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "prisma generate && next build",
+    "start": "next start -p 3000",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed.ts",
+    "setup": "prisma generate && prisma db push && tsx prisma/seed.ts",
+    "gen:icons": "tsx scripts/generate-icons.ts",
+    "gen:vapid": "tsx scripts/generate-vapid.ts",
+    "postinstall": "prisma generate",
+    "worker": "tsx scripts/worker.ts",
+    "db:use-postgres": "tsx scripts/use-postgres.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.2.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "lucide-react": "^0.469.0",
+    "next": "^15.1.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^2.6.0",
+    "web-push": "^3.6.7",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.6",
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.4",
+    "@types/react-dom": "^19.0.2",
+    "@types/web-push": "^3.6.4",
+    "eslint": "^9.18.0",
+    "eslint-config-next": "^15.1.4",
+    "postcss": "^8.4.49",
+    "prisma": "^6.2.1",
+    "sharp": "^0.33.5",
+    "tailwindcss": "^4.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20.11"
+  }
+}

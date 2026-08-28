@@ -1,0 +1,147 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { History, ListChecks, Plug, Settings, type LucideIcon } from "lucide-react";
+import { Logo } from "@/components/Logo";
+import { cn } from "@/lib/utils";
+
+interface NavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+}
+
+const NAV: NavItem[] = [
+  { href: "/", label: "List", icon: ListChecks },
+  { href: "/activity", label: "Activity", icon: History },
+  { href: "/connect", label: "Connect", icon: Plug },
+  { href: "/settings", label: "Settings", icon: Settings },
+];
+
+function isActive(pathname: string, href: string) {
+  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+}
+
+/** Desktop rail. The logo sits at the top at a size you cannot miss. */
+export function SideNav({ counts }: { counts?: Record<string, number> }) {
+  const pathname = usePathname();
+  const total = counts ? Object.values(counts).reduce((a, b) => a + b, 0) : 0;
+
+  return (
+    <aside
+      className="fixed inset-y-0 left-0 z-30 hidden w-[236px] flex-col border-r px-4 py-6 lg:flex"
+      style={{ background: "var(--bg-alt)", borderColor: "var(--line)" }}
+    >
+      <Link href="/" className="flex flex-col items-start gap-3 px-2">
+        <Logo size={76} priority />
+        <div>
+          <p className="text-[22px] font-extrabold leading-none tracking-tight" style={{ color: "var(--text)" }}>
+            ToDo
+          </p>
+          <p className="mt-1.5 text-[12px] font-semibold leading-snug" style={{ color: "var(--text-3)" }}>
+            {total > 0 ? `${total} waiting on you` : "All clear"}
+          </p>
+        </div>
+      </Link>
+
+      <nav className="mt-8 flex flex-col gap-1">
+        {NAV.map((item) => {
+          const active = isActive(pathname, item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14.5px] font-bold transition"
+              style={{
+                background: active ? "var(--card)" : "transparent",
+                color: active ? "var(--text)" : "var(--text-3)",
+                boxShadow: active ? "var(--shadow-card)" : undefined,
+              }}
+            >
+              <item.icon className="size-[18px]" strokeWidth={2.4} />
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="mt-auto px-2 pt-6">
+        <p className="text-[11.5px] font-semibold leading-relaxed" style={{ color: "var(--text-3)" }}>
+          Filled by your assistant over MCP. Clear something here and it stops coming back.
+        </p>
+      </div>
+    </aside>
+  );
+}
+
+/** Mobile bottom bar. Thumb-height, safe-area aware. */
+export function TabBar() {
+  const pathname = usePathname();
+
+  return (
+    <nav
+      className="safe-bottom fixed inset-x-0 bottom-0 z-40 flex border-t lg:hidden"
+      style={{ background: "var(--card)", borderColor: "var(--line)" }}
+    >
+      {NAV.map((item) => {
+        const active = isActive(pathname, item.href);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="flex flex-1 flex-col items-center gap-1 py-2.5 transition active:scale-95"
+            style={{ color: active ? "var(--text)" : "var(--text-3)" }}
+            aria-current={active ? "page" : undefined}
+          >
+            <item.icon className="size-[21px]" strokeWidth={active ? 2.8 : 2.2} />
+            <span className={cn("text-[10.5px]", active ? "font-extrabold" : "font-semibold")}>{item.label}</span>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** Shared page frame: rail on the left, content in the middle, tabs at the bottom. */
+export function PageShell({
+  children,
+  counts,
+  wide,
+}: {
+  children: React.ReactNode;
+  counts?: Record<string, number>;
+  wide?: boolean;
+}) {
+  return (
+    <div className="min-h-dvh" style={{ background: "var(--bg)" }}>
+      <SideNav counts={counts} />
+      <main className={cn("lg:pl-[236px]")}>
+        <div className={cn("mx-auto w-full px-4 pb-28 pt-4 sm:px-6 lg:pb-14 lg:pt-8", wide ? "max-w-[1180px]" : "max-w-[720px]")}>
+          {children}
+        </div>
+      </main>
+      <TabBar />
+    </div>
+  );
+}
+
+/** Mobile-only header. On desktop the rail already carries the branding. */
+export function MobileHeader({ subtitle, right }: { subtitle?: string; right?: React.ReactNode }) {
+  return (
+    <header className="mb-4 flex items-center gap-3 lg:hidden">
+      <Logo size={52} priority />
+      <div className="min-w-0 flex-1">
+        <p className="text-[21px] font-extrabold leading-none tracking-tight" style={{ color: "var(--text)" }}>
+          ToDo
+        </p>
+        {subtitle ? (
+          <p className="mt-1 truncate text-[12.5px] font-semibold" style={{ color: "var(--text-3)" }}>
+            {subtitle}
+          </p>
+        ) : null}
+      </div>
+      {right}
+    </header>
+  );
+}

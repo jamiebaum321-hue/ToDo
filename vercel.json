@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/tick",
+      "schedule": "*/15 * * * *"
+    }
+  ],
+  "functions": {
+    "src/app/api/mcp/route.ts": { "maxDuration": 60 },
+    "src/app/api/mcp/t/[token]/route.ts": { "maxDuration": 60 },
+    "src/app/api/cron/tick/route.ts": { "maxDuration": 60 }
+  }
+}

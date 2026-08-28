@@ -1,0 +1,26 @@
+{
+  "name": "ToDo — agent-filled task inbox",
+  "short_name": "ToDo",
+  "description": "Your assistant reads every inbox, calendar and chat you have, sorts what is left into four buckets, and puts each one a single tap from done.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#F5EFE3",
+  "theme_color": "#F5EFE3",
+  "categories": ["productivity", "business"],
+  "lang": "en",
+  "dir": "ltr",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Urgent & Important", "short_name": "Urgent", "url": "/?bucket=urgent_important", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Connect your assistant", "short_name": "Connect", "url": "/connect", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

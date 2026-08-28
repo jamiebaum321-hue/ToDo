@@ -1,0 +1,412 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import {
+  Check,
+  ChevronDown,
+  Clock,
+  FolderInput,
+  Forward,
+  PenLine,
+  Pin,
+  Trash2,
+  X,
+} from "lucide-react";
+import type { TaskDTO } from "@/lib/client/types";
+import type { LinkPreference } from "@/lib/deeplinks";
+import { relativeLabel } from "@/lib/time";
+import { cn, displayName } from "@/lib/utils";
+import { bucketVars, BUCKET_ICON, PROVIDER_ICON } from "./icons";
+import { OpenButton } from "./OpenButton";
+import { BUCKETS } from "@/lib/buckets";
+
+interface Props {
+  task: TaskDTO;
+  linkPreference: LinkPreference;
+  onClose: () => void;
+  onComplete: (task: TaskDTO) => void;
+  onSnooze: (task: TaskDTO, until: Date) => void;
+  onDelegate: (task: TaskDTO, to: string | null) => void;
+  onMove: (task: TaskDTO, bucket: string) => void;
+  onPin: (task: TaskDTO) => void;
+  onDelete: (task: TaskDTO) => void;
+}
+
+const SNOOZE_OPTIONS = [
+  { label: "Later today", hours: 4 },
+  { label: "Tomorrow", hours: 24 },
+  { label: "This weekend", hours: 24 * 3 },
+  { label: "Next week", hours: 24 * 7 },
+];
+
+export function TaskSheet({
+  task,
+  linkPreference,
+  onClose,
+  onComplete,
+  onSnooze,
+  onDelegate,
+  onMove,
+  onPin,
+  onDelete,
+}: Props) {
+  const [menu, setMenu] = useState<"none" | "snooze" | "move" | "delegate">("none");
+  const [delegateTo, setDelegateTo] = useState(task.delegateTo ?? "");
+  const [showDraft, setShowDraft] = useState(false);
+
+  const vars = bucketVars(task.bucket);
+  const BucketIcon = BUCKET_ICON[task.bucket] ?? BUCKET_ICON.delete;
+  const ProviderIcon = PROVIDER_ICON[task.source.provider ?? "other"] ?? PROVIDER_ICON.other;
+  const who = displayName(task.source.from);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") (menu === "none" ? onClose : () => setMenu("none"))();
+    };
+    document.addEventListener("keydown", onKey);
+    // Stop the list scrolling underneath the sheet.
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [menu, onClose]);
+
+  const sourceLink = task.links.find((l) => l.kind === "source") ?? task.links[0] ?? null;
+  const extraLinks = task.links.filter((l) => l !== sourceLink && l.kind !== "draft");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 animate-fade"
+        style={{ background: "var(--overlay)", backdropFilter: "blur(3px)" }}
+      />
+
+      <div
+        className="animate-sheet relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[var(--radius-sheet)] sm:max-w-[560px] sm:rounded-[var(--radius-sheet)]"
+        style={{ background: "var(--card)", boxShadow: "var(--shadow-sheet)" }}
+      >
+        {/* Grab handle — the affordance that says "this is a sheet". */}
+        <div className="flex justify-center pt-2.5 sm:hidden">
+          <span className="h-1 w-10 rounded-full" style={{ background: "var(--line-strong)" }} />
+        </div>
+
+        <header className="flex items-start gap-3 px-5 pb-3 pt-4">
+          <span
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-extrabold"
+            style={{ background: vars.tint, color: vars.accent }}
+          >
+            <BucketIcon className="size-[13px]" strokeWidth={2.8} />
+            {BUCKETS.find((b) => b.key === task.bucket)?.short ?? "Task"}
+          </span>
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={() => onPin(task)}
+            aria-label={task.pinned ? "Unpin" : "Pin to the top"}
+            className="grid size-8 place-items-center rounded-full transition active:scale-90"
+            style={{ background: task.pinned ? "var(--bg-alt)" : "transparent", color: "var(--text-3)" }}
+          >
+            <Pin className={cn("size-4", task.pinned && "rotate-45")} strokeWidth={2.4} />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="grid size-8 place-items-center rounded-full transition active:scale-90"
+            style={{ background: "var(--bg-alt)", color: "var(--text-2)" }}
+          >
+            <X className="size-4" strokeWidth={2.8} />
+          </button>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+          <h2 className="text-[22px] font-extrabold leading-[1.22] tracking-tight" style={{ color: "var(--text)" }}>
+            {task.title}
+          </h2>
+
+          {task.description ? (
+            <p className="mt-2.5 text-[15px] leading-relaxed" style={{ color: "var(--text-2)" }}>
+              {task.description}
+            </p>
+          ) : null}
+
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px] font-semibold">
+            {task.dueAt ? (
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1"
+                style={{
+                  background: new Date(task.dueAt) < new Date() ? "var(--accent-urgent)" : "var(--bg-alt)",
+                  color: new Date(task.dueAt) < new Date() ? "#fff" : "var(--text-2)",
+                }}
+              >
+                <Clock className="size-[13px]" strokeWidth={2.6} />
+                Due {relativeLabel(new Date(task.dueAt))}
+              </span>
+            ) : null}
+            {task.estimateMinutes ? (
+              <span className="rounded-full px-2.5 py-1 tabular" style={{ background: "var(--bg-alt)", color: "var(--text-2)" }}>
+                ~{task.estimateMinutes} min
+              </span>
+            ) : null}
+            {task.tags.map((tag) => (
+              <span key={tag} className="rounded-full px-2.5 py-1" style={{ background: "var(--bg-alt)", color: "var(--text-3)" }}>
+                {tag}
+              </span>
+            ))}
+          </div>
+
+          {/* Where it came from ------------------------------------------- */}
+          {task.source.provider && task.source.provider !== "manual" ? (
+            <div
+              className="mt-4 rounded-2xl px-4 py-3"
+              style={{ background: "var(--bg-alt)", border: "1px solid var(--line-2)" }}
+            >
+              <div className="flex items-center gap-2 text-[12px] font-extrabold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                <ProviderIcon className="size-[13px]" strokeWidth={2.6} />
+                {task.source.chip}
+                {task.source.receivedAt ? <span className="font-semibold normal-case tracking-normal">· {relativeLabel(new Date(task.source.receivedAt))}</span> : null}
+              </div>
+              {who ? (
+                <p className="mt-1.5 text-[14px] font-bold" style={{ color: "var(--text)" }}>
+                  {who}
+                </p>
+              ) : null}
+              {task.source.subject ? (
+                <p className="text-[13.5px] font-semibold" style={{ color: "var(--text-2)" }}>
+                  {task.source.subject}
+                </p>
+              ) : null}
+              {task.source.snippet ? (
+                <p className="mt-1.5 text-[13px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+                  “{task.source.snippet}”
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* The buttons that finish the job ------------------------------ */}
+          <div className="mt-4 space-y-2.5">
+            {sourceLink ? (
+              <OpenButton
+                label={sourceLink.label}
+                target={{ web: sourceLink.web, desktop: sourceLink.desktop, mobile: sourceLink.mobile }}
+                // Outlook blue for Outlook, Gmail red for Gmail. The bucket
+                // colour would put a red "danger" button on every urgent task.
+                accent={sourceLink.accent}
+                preference={linkPreference}
+                icon={<ProviderIcon className="size-[18px] shrink-0" strokeWidth={2.4} />}
+              />
+            ) : null}
+
+            {task.draft ? (
+              <div className="space-y-2">
+                <OpenButton
+                  label={`See your draft in ${task.draft.providerLabel}`}
+                  target={{ web: task.draft.web, desktop: task.draft.desktop, mobile: task.draft.mobile }}
+                  accent="var(--accent-delegate)"
+                  preference={linkPreference}
+                  variant="draft"
+                  icon={<PenLine className="size-[18px] shrink-0" strokeWidth={2.4} />}
+                  hint="Written for you already — read it, then send."
+                />
+                {task.draft.body ? (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowDraft((v) => !v)}
+                      className="inline-flex items-center gap-1 px-1 text-[13px] font-bold"
+                      style={{ color: "var(--text-3)" }}
+                    >
+                      <ChevronDown className={cn("size-4 transition", showDraft && "rotate-180")} strokeWidth={2.6} />
+                      {showDraft ? "Hide the draft" : "Preview the draft"}
+                    </button>
+                    {showDraft ? (
+                      <div
+                        className="mt-2 rounded-2xl px-4 py-3 text-[13.5px] leading-relaxed"
+                        style={{ background: "var(--bg-alt)", color: "var(--text-2)", border: "1px solid var(--line-2)" }}
+                      >
+                        {task.draft.subject ? (
+                          <p className="mb-1.5 font-bold" style={{ color: "var(--text)" }}>
+                            {task.draft.subject}
+                          </p>
+                        ) : null}
+                        <p className="whitespace-pre-wrap">{task.draft.body}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {extraLinks.map((link) => (
+              <OpenButton
+                key={link.id}
+                label={link.label}
+                target={{ web: link.web, desktop: link.desktop, mobile: link.mobile }}
+                preference={linkPreference}
+                variant="secondary"
+              />
+            ))}
+          </div>
+
+          {task.reason ? (
+            <p className="mt-4 px-1 text-[12.5px] italic leading-relaxed" style={{ color: "var(--text-3)" }}>
+              Filed here because: {task.reason}
+            </p>
+          ) : null}
+
+          {/* Sub-menus ---------------------------------------------------- */}
+          {menu === "snooze" ? (
+            <MenuCard title="Come back to it">
+              {SNOOZE_OPTIONS.map((opt) => (
+                <MenuRow
+                  key={opt.label}
+                  onClick={() => {
+                    onSnooze(task, new Date(Date.now() + opt.hours * 3600e3));
+                    setMenu("none");
+                  }}
+                >
+                  {opt.label}
+                </MenuRow>
+              ))}
+            </MenuCard>
+          ) : null}
+
+          {menu === "move" ? (
+            <MenuCard title="Move to">
+              {BUCKETS.filter((b) => b.key !== task.bucket).map((b) => (
+                <MenuRow
+                  key={b.key}
+                  onClick={() => {
+                    onMove(task, b.key);
+                    setMenu("none");
+                  }}
+                >
+                  {b.label}
+                </MenuRow>
+              ))}
+            </MenuCard>
+          ) : null}
+
+          {menu === "delegate" ? (
+            <MenuCard title="Hand it to">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  onDelegate(task, delegateTo.trim() || null);
+                  setMenu("none");
+                }}
+                className="flex gap-2 px-1 pb-1"
+              >
+                <input
+                  autoFocus
+                  value={delegateTo}
+                  onChange={(e) => setDelegateTo(e.target.value)}
+                  placeholder="Name or email"
+                  className="min-w-0 flex-1 rounded-xl px-3 py-2.5 text-[14px] font-semibold outline-none"
+                  style={{ background: "var(--card)", border: "1px solid var(--line)", color: "var(--text)" }}
+                />
+                <button
+                  type="submit"
+                  className="rounded-xl px-4 py-2.5 text-[14px] font-bold text-white"
+                  style={{ background: "var(--accent-delegate)" }}
+                >
+                  Hand off
+                </button>
+              </form>
+            </MenuCard>
+          ) : null}
+        </div>
+
+        {/* Action bar ---------------------------------------------------- */}
+        <footer
+          className="safe-bottom flex items-center gap-2 border-t px-4 py-3"
+          style={{ borderColor: "var(--line)", background: "var(--card-alt)" }}
+        >
+          <button
+            type="button"
+            onClick={() => onComplete(task)}
+            className="flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-3.5 text-[15px] font-extrabold text-white transition active:scale-[0.98]"
+            style={{ background: "var(--accent-done)" }}
+          >
+            <Check className="size-[18px]" strokeWidth={3.2} />
+            Done
+          </button>
+
+          <SheetAction label="Snooze" active={menu === "snooze"} onClick={() => setMenu(menu === "snooze" ? "none" : "snooze")}>
+            <Clock className="size-[18px]" strokeWidth={2.5} />
+          </SheetAction>
+          <SheetAction label="Delegate" active={menu === "delegate"} onClick={() => setMenu(menu === "delegate" ? "none" : "delegate")}>
+            <Forward className="size-[18px]" strokeWidth={2.5} />
+          </SheetAction>
+          <SheetAction label="Move" active={menu === "move"} onClick={() => setMenu(menu === "move" ? "none" : "move")}>
+            <FolderInput className="size-[18px]" strokeWidth={2.5} />
+          </SheetAction>
+          <SheetAction label="Delete" onClick={() => onDelete(task)} danger>
+            <Trash2 className="size-[18px]" strokeWidth={2.5} />
+          </SheetAction>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function SheetAction({
+  label,
+  children,
+  onClick,
+  active,
+  danger,
+}: {
+  label: string;
+  children: React.ReactNode;
+  onClick: () => void;
+  active?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="grid size-[52px] shrink-0 place-items-center rounded-2xl transition active:scale-90"
+      style={{
+        background: active ? "var(--bg-alt)" : "transparent",
+        border: "1px solid var(--line)",
+        color: danger ? "var(--accent-urgent)" : "var(--text-2)",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MenuCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="animate-rise mt-4 rounded-2xl p-2" style={{ background: "var(--bg-alt)", border: "1px solid var(--line-2)" }}>
+      <p className="px-2 pb-1 pt-1 text-[11.5px] font-extrabold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+        {title}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+function MenuRow({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-xl px-3 py-2.5 text-left text-[14.5px] font-bold transition hover:opacity-70"
+      style={{ color: "var(--text)" }}
+    >
+      {children}
+    </button>
+  );
+}
