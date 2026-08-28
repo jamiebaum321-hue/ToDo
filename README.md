@@ -215,19 +215,19 @@ Gmail's most durable link is built from the RFC-822 `Message-ID` — it survives
 
 ## Deploying
 
-**Vercel + Neon** — the deployment this is built for. Add a Postgres store to the project (Storage → Create → Neon), which injects the connection strings, then set:
+**Vercel + Neon** — the deployment this is built for. Add a Postgres store to the project (Storage → Create → Neon) and the database side needs nothing else: the integration injects `DATABASE_URL` and `DATABASE_URL_UNPOOLED`, and the build resolves those into what Prisma wants. Vercel Postgres' `POSTGRES_PRISMA_URL` / `POSTGRES_URL_NON_POOLING` work too, as does setting `DATABASE_URL` and `DIRECT_URL` by hand.
+
+Then set the rest:
 
 | Variable | Value |
 | --- | --- |
-| `DATABASE_URL` | the **pooled** connection string (the `-pooler` host) |
-| `DIRECT_URL` | the **unpooled** connection string — migrations need it |
 | `NEXT_PUBLIC_APP_URL` | your deployment URL |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_SUBJECT` | from `npm run gen:vapid` |
 | `CRON_SECRET` | any long random string |
 
-`npm run build` runs `prisma migrate deploy` before `next build`, so each deploy brings the database up to date on its own. `vercel.json` registers the 15-minute cron.
+`npm run build` applies pending migrations before `next build`, so each deploy brings the database up to date on its own. `vercel.json` registers the 15-minute cron.
 
-Pooling matters here: a serverless function opens a new connection per invocation, so pointing `DATABASE_URL` at the direct host will exhaust Postgres under any real traffic.
+Two details the build handles for you, because getting either wrong fails quietly and late. A serverless function opens a connection per invocation, so the runtime must use the **pooled** endpoint — and that endpoint is PgBouncer in transaction mode, which cannot hold the prepared statements Prisma creates, so the pooled URL gets `?pgbouncer=true` appended automatically. Migrations meanwhile need a real session, so they always run against the **unpooled** endpoint.
 
 **Docker** (Postgres and the scheduler, all in compose)
 
@@ -281,6 +281,7 @@ src/
     api/mcp/               the MCP endpoint (+ /t/[token] variant)
     api/cron/tick/         scheduled housekeeping
   lib/
+    db-url.ts              resolving whatever connection strings the host injected
     sync.ts                the write path: upsert, replace, refuse
     suppression.ts         the memory that stops repeats
     deeplinks.ts           three URLs per link, and picking the right one
@@ -289,7 +290,7 @@ src/
   components/app/          the UI
 prisma/schema.prisma       PostgreSQL; no enums or Json columns, so it reads as plain SQL
 prisma/migrations/         checked-in SQL, applied by `prisma migrate deploy`
-tests/                     98 tests, including a real Postgres integration suite
+tests/                     108 tests, including a real Postgres integration suite
 ```
 
 ### Commands
@@ -297,7 +298,7 @@ tests/                     98 tests, including a real Postgres integration suite
 ```bash
 npm run dev            # development server
 npm run setup          # migrate + seed
-npm test               # 98 tests, against a real Postgres
+npm test               # 108 tests, against a real Postgres
 npm run typecheck      # tsc --noEmit
 npm run build          # migrate + production build
 npm run build:no-migrate  # build only, for CI and Docker images

@@ -53,6 +53,6 @@ jobs:
       - name: Test
         run: npm test
 
-      # The migration already ran above, so build without repeating it.
+      # The migration already ran as its own step above.
       - name: Build
         run: npm run build:no-migrate
