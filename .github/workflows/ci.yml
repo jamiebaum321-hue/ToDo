@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    # Tests run against the same engine production uses, so a Postgres-only
+    # behaviour cannot pass here and fail on Neon.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: todo
+          POSTGRES_PASSWORD: todo
+          POSTGRES_DB: todo_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U todo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://todo:todo@localhost:5432/todo_test
+      DIRECT_URL: postgresql://todo:todo@localhost:5432/todo_test
+      TEST_DATABASE_URL: postgresql://todo:todo@localhost:5432/todo_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Verify migrations apply to an empty database
+        run: npx prisma migrate deploy
+
+      - name: Test
+        run: npm test
+
+      # The migration already ran as its own step above.
+      - name: Build
+        run: npm run build:no-migrate

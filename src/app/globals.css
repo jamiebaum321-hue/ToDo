@@ -1,0 +1,238 @@
+@import "tailwindcss";
+
+/*
+ * Palette taken straight out of the logo: the cream of the disc and the
+ * near-black of the ink. Everything else is a tint of those two, so the app
+ * and the mark always look like they came from the same place.
+ */
+@theme {
+  --color-cream: #f5efe3;
+  --color-cream-deep: #ece4d4;
+  --color-paper: #fffcf6;
+  --color-ink: #14140f;
+  --color-ink-soft: #3d3a32;
+  --color-muted: #7a7468;
+  --color-hairline: #e2dacb;
+
+  --color-flame: #d8402f;
+  --color-flame-soft: #fbeae7;
+  --color-amber: #b4761a;
+  --color-amber-soft: #f8efdd;
+  --color-cobalt: #2c7bb8;
+  --color-cobalt-soft: #e7f1f9;
+  --color-stone: #75705f;
+  --color-stone-soft: #efece3;
+  --color-grass: #2f7d4f;
+  --color-grass-soft: #e6f2ea;
+
+  --font-sans: var(--font-nunito), ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --radius-card: 18px;
+  --radius-sheet: 26px;
+
+  --shadow-card: 0 1px 2px rgba(20, 20, 15, 0.05), 0 10px 26px -18px rgba(20, 20, 15, 0.4);
+  --shadow-lift: 0 2px 4px rgba(20, 20, 15, 0.06), 0 22px 46px -22px rgba(20, 20, 15, 0.42);
+  --shadow-sheet: 0 -8px 60px -12px rgba(20, 20, 15, 0.3);
+}
+
+/* Explicit choice wins; otherwise follow the system. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  --bg: #f5efe3;
+  --bg-alt: #ece4d4;
+  --card: #fffcf6;
+  --card-alt: #faf5ea;
+  --text: #14140f;
+  --text-2: #3d3a32;
+  --text-3: #7a7468;
+  --line: rgba(20, 20, 15, 0.1);
+  --line-2: rgba(20, 20, 15, 0.055);
+  --line-strong: rgba(20, 20, 15, 0.17);
+  --accent-urgent: #d8402f;
+  --accent-quick: #b4761a;
+  --accent-delegate: #2c7bb8;
+  --accent-drop: #75705f;
+  --accent-done: #2f7d4f;
+  --tint-urgent: #fbeae7;
+  --tint-quick: #f8efdd;
+  --tint-delegate: #e7f1f9;
+  --tint-drop: #efece3;
+  --tint-done: #e6f2ea;
+  --overlay: rgba(20, 20, 15, 0.42);
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg: #131209;
+  --bg-alt: #1b190f;
+  --card: #201e15;
+  --card-alt: #262319;
+  --text: #f5efe3;
+  --text-2: #d3ccbc;
+  --text-3: #948d7d;
+  --line: rgba(245, 239, 227, 0.13);
+  --line-2: rgba(245, 239, 227, 0.07);
+  --line-strong: rgba(245, 239, 227, 0.22);
+  --accent-urgent: #ff8271;
+  --accent-quick: #e0a44c;
+  --accent-delegate: #74b6e8;
+  --accent-drop: #a8a08e;
+  --accent-done: #63c98c;
+  --tint-urgent: #35150f;
+  --tint-quick: #2e2210;
+  --tint-delegate: #10222f;
+  --tint-drop: #24221a;
+  --tint-done: #10281a;
+  --overlay: rgba(0, 0, 0, 0.62);
+  color-scheme: dark;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  background: var(--bg);
+  /* Keeps the cream behind the status bar on an installed iOS PWA. */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior-y: none;
+}
+
+::selection {
+  background: var(--accent-urgent);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 2.5px solid var(--accent-delegate);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+/* Utility layer -------------------------------------------------------- */
+
+@utility surface {
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+
+@utility hairline {
+  border-color: var(--line);
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
+}
+
+@utility safe-top {
+  padding-top: max(env(safe-area-inset-top), 0px);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+/* Animation ------------------------------------------------------------- */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes strike {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+.animate-rise {
+  animation: rise 0.28s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.animate-sheet {
+  animation: sheet-up 0.3s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.animate-fade {
+  animation: fade-in 0.2s ease both;
+}
+.animate-pop {
+  animation: pop 0.36s cubic-bezier(0.3, 1.4, 0.5, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Card check-off: the line sweeps across as the task leaves. */
+.task-done .task-title {
+  color: var(--text-3);
+}
+.task-done .task-title::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 1.5px;
+  background: currentColor;
+  animation: strike 0.3s ease both;
+}

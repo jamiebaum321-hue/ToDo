@@ -1,0 +1,397 @@
+// ToDo — agent-filled task inbox
+// ---------------------------------------------------------------------------
+// PostgreSQL, because the app runs on Vercel and serverless functions have no
+// disk to keep a SQLite file on.
+//
+//   DATABASE_URL  pooled connection, used at runtime. Serverless opens a lot of
+//                 short-lived connections, so this must go through the pooler
+//                 (Neon's -pooler host, or PgBouncer) or Postgres runs out of
+//                 slots under any real traffic.
+//   DIRECT_URL    unpooled connection, used only by `prisma migrate`. Migrations
+//                 need session-level statements a transaction pooler will not
+//                 pass through.
+//
+// The models below use no enums and no Json columns, so the schema stays
+// portable to any Postgres and readable as plain SQL.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String  @id @default(cuid())
+  email        String  @unique
+  name         String?
+  passwordHash String
+  timezone     String  @default("America/New_York")
+
+  /// Null until the address is confirmed. Sign-in is refused before that, so a
+  /// stranger cannot occupy someone else's email.
+  emailVerified        DateTime?
+  /// Bumped on password change and on reset, so old sessions can be cut loose.
+  credentialsChangedAt DateTime  @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  settings      Settings?
+  sessions      Session[]
+  apiTokens     ApiToken[]
+  tasks         Task[]
+  suppressions  Suppression[]
+  events        TaskEvent[]
+  agentRuns     AgentRun[]
+  pushDevices   PushDevice[]
+  notifications NotificationLog[]
+  verifications VerificationToken[]
+}
+
+/// Browser cookie session. Only the SHA-256 hash of the token is stored.
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  userAgent  String?
+  /// Coarse location and IP, so the session list is recognisable to its owner.
+  ip         String?
+  lastSeenAt DateTime @default(now())
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Bearer token used by the MCP client (Claude / ChatGPT) to reach /api/mcp.
+/// Only the SHA-256 hash is stored; `prefix` exists so the UI can show
+/// `todo_ab12…` next to each token without holding the secret.
+model ApiToken {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  tokenHash  String    @unique
+  prefix     String
+  scopes     String    @default("tasks:read,tasks:write,notify")
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentRuns AgentRun[]
+
+  @@index([userId])
+}
+
+/// One-time links sent by email. Only the SHA-256 hash is stored, so a leaked
+/// database row cannot be replayed as a login.
+/// purpose: "verify_email" | "password_reset" | "change_email"
+model VerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  purpose   String
+  tokenHash String    @unique
+  /// For change_email: the address being moved to.
+  payload   String?
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
+}
+
+/// Fixed-window counters, in the database rather than in memory because
+/// serverless functions do not share memory — an in-process limiter would reset
+/// on every cold start and count separately per instance, which is no limit.
+model RateLimit {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Preferences
+// ---------------------------------------------------------------------------
+
+model Settings {
+  userId String @id
+
+  /// How many days forward/back the agent should consider on each run.
+  rollingWindowDays Int     @default(14)
+  /// Local time (HH:mm) the daily digest push fires.
+  digestTime        String  @default("07:00")
+  digestEnabled     Boolean @default(true)
+  /// Push a notification the moment the agent adds an urgent+important task.
+  urgentPushEnabled Boolean @default(true)
+  remindersEnabled  Boolean @default(true)
+  quietHoursEnabled Boolean @default(true)
+  quietHoursStart   String  @default("21:30")
+  quietHoursEnd     String  @default("06:30")
+
+  /// "auto" picks the desktop/mobile app link on those platforms and the web
+  /// link elsewhere. "app" always prefers the native app. "web" always browser.
+  linkPreference String  @default("auto")
+  /// Show the "See response in your draft" button when the agent wrote one.
+  showDrafts     Boolean @default(true)
+  /// Ask the agent to write draft replies during its run.
+  requestDrafts  Boolean @default(true)
+  /// Show the agent's one-line reason for each bucket placement.
+  showReasons    Boolean @default(true)
+
+  /// Completed tasks disappear from the list after this many days (0 = never).
+  autoArchiveDays Int    @default(7)
+  theme           String @default("system")
+  /// Default view on open: "focus" | "board" | "list"
+  defaultView     String @default("focus")
+
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Tasks
+// ---------------------------------------------------------------------------
+
+/// bucket:   "urgent_important" | "urgent_not_priority" | "delegate" | "delete"
+/// status:   "open" | "completed" | "dismissed" | "snoozed" | "delegated"
+/// origin:   "agent" | "user"
+model Task {
+  id     String @id @default(cuid())
+  userId String
+
+  title       String
+  description String?
+  bucket      String
+  status      String  @default("open")
+  origin      String  @default("agent")
+
+  /// Stable dedupe key, e.g. "outlook:message:AAMkAGI2...". The agent sends the
+  /// same key on every run; it is what lets the app tell the agent "already done".
+  sourceKey String?
+
+  sourceProvider   String? // outlook | gmail | teams | zoom | slack | calendar | manual | ...
+  sourceType       String? // email | message | meeting | event | file | call
+  sourceExternalId String?
+  sourceAccount    String? // which mailbox / workspace this came from
+  sourceFrom       String? // "Bob Whitaker <bob@acme.com>"
+  sourceSubject    String?
+  sourceSnippet    String?
+  sourceReceivedAt DateTime?
+
+  /// Why the agent filed it here. Shown under the title when enabled.
+  reason     String?
+  confidence Float?  @default(0.8)
+  /// JSON array of strings, serialised as text so the column reads the same
+  /// way from SQL as it does from the app.
+  tags       String  @default("[]")
+
+  dueAt           DateTime?
+  snoozedUntil    DateTime?
+  estimateMinutes Int?
+  /// For the Delegate bucket: who it should go to.
+  delegateTo      String?
+  pinned          Boolean   @default(false)
+  /// Manual ordering within a bucket. Lower sorts first.
+  position        Int       @default(0)
+
+  completedAt DateTime?
+  dismissedAt DateTime?
+
+  /// The run that last wrote this task. Used for replace-the-list semantics.
+  lastRunId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  links  TaskLink[]
+  draft  Draft?
+  events TaskEvent[]
+
+  @@unique([userId, sourceKey])
+  @@index([userId, status, bucket])
+  @@index([userId, dueAt])
+  @@index([userId, lastRunId])
+  @@index([userId, snoozedUntil])
+}
+
+/// One button in the task detail sheet. Three URLs per link so the app can send
+/// you to the desktop app, the phone app, or the browser — whichever fits.
+/// kind: "source" | "draft" | "join" | "calendar" | "file" | "custom"
+model TaskLink {
+  id         String  @id @default(cuid())
+  taskId     String
+  kind       String  @default("source")
+  label      String
+  provider   String?
+  webUrl     String?
+  desktopUrl String?
+  mobileUrl  String?
+  isPrimary  Boolean @default(false)
+  position   Int     @default(0)
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+/// A reply the agent already wrote and parked in your drafts folder.
+model Draft {
+  id         String   @id @default(cuid())
+  taskId     String   @unique
+  provider   String
+  kind       String   @default("reply") // reply | reply_all | forward | new
+  subject    String?
+  body       String?
+  externalId String?
+  webUrl     String?
+  desktopUrl String?
+  mobileUrl  String?
+  createdAt  DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// The feedback loop
+// ---------------------------------------------------------------------------
+
+/// When you clear a task in the app we record it here, keyed by sourceKey.
+/// On the next run the agent reads these first and does not recreate the task —
+/// this is what stops "you never replied to Bob" reappearing every morning.
+/// action: "completed" | "dismissed" | "delegated" | "snoozed" | "not_relevant"
+model Suppression {
+  id        String    @id @default(cuid())
+  userId    String
+  sourceKey String
+  action    String
+  note      String?
+  /// Snapshot of the task title so the agent has context without a join.
+  taskTitle String?
+  /// Null = forever. Snoozes set this so the item can legitimately come back.
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceKey])
+  @@index([userId, createdAt])
+  @@index([userId, expiresAt])
+}
+
+/// actor: "user" | "agent" | "system"
+model TaskEvent {
+  id      String  @id @default(cuid())
+  userId  String
+  taskId  String?
+  type    String
+  actor   String  @default("user")
+  /// Serialised JSON. Holds the previous values so an action can be undone.
+  payload String?
+
+  createdAt DateTime @default(now())
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task Task? @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([taskId])
+}
+
+/// status: "running" | "completed" | "failed"
+model AgentRun {
+  id      String  @id @default(cuid())
+  userId  String
+  tokenId String?
+
+  source     String    @default("scheduled") // scheduled | manual | api
+  client     String? // "Claude Desktop", "ChatGPT", ...
+  status     String    @default("running")
+  windowDays Int       @default(14)
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  createdCount   Int @default(0)
+  updatedCount   Int @default(0)
+  unchangedCount Int @default(0)
+  removedCount   Int @default(0)
+  skippedCount   Int @default(0)
+
+  /// Serialised JSON: [{ sourceKey, title, reason }] — what the app refused to
+  /// recreate because you had already handled it.
+  skippedDetail String?
+  summary       String?
+  error         String?
+
+  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token ApiToken? @relation(fields: [tokenId], references: [id], onDelete: SetNull)
+
+  @@index([userId, startedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Push
+// ---------------------------------------------------------------------------
+
+/// One device that can receive notifications, however it receives them.
+/// transport: "web" (VAPID web push) | "fcm" (Android native) | "apns" (iOS native)
+model PushDevice {
+  id        String @id @default(cuid())
+  userId    String
+  transport String @default("web")
+
+  /// Web push: the subscription endpoint and its keys.
+  endpoint String? @unique
+  p256dh   String?
+  auth     String?
+
+  /// Native push: the APNs or FCM registration token.
+  deviceToken String? @unique
+
+  userAgent    String?
+  platform     String? // ios | android | macos | windows | linux | unknown
+  label        String?
+  createdAt    DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+  failureCount Int      @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model NotificationLog {
+  id        String   @id @default(cuid())
+  userId    String
+  kind      String // digest | urgent | reminder | test | agent
+  title     String
+  body      String?
+  url       String?
+  taskId    String?
+  /// How many devices accepted it.
+  delivered Int      @default(0)
+  sentAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, sentAt])
+}
