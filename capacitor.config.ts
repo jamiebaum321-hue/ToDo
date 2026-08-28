@@ -26,7 +26,7 @@ const config: CapacitorConfig = {
     cleartext: false,
     // Anything not on this origin opens in the system browser instead of the
     // webview — tapping "Open in Outlook" must hand off to the real app.
-    allowNavigation: [new URL(server).host],
+    allowNavigation: [new URL(server).host, "www." + new URL(server).host],
   },
 
   ios: {
