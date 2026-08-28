@@ -16,6 +16,10 @@ export interface DeriveInput extends LinkTarget {
   externalId?: string | null;
   /** RFC-822 Message-ID header, if the agent has it. The best Gmail fallback. */
   messageId?: string | null;
+  /** Gmail's thread id. What Gmail's #all/ fragment actually resolves. */
+  threadId?: string | null;
+  /** The mailbox address, e.g. "jamie@company.com". Names the Gmail account. */
+  account?: string | null;
   /** Which signed-in account, for Gmail's /u/{n}/ and Outlook mailboxes. */
   accountIndex?: number | null;
   /** Zoom passcode, Teams tenant, etc. */
@@ -47,6 +51,24 @@ function zoomAppFromWeb(web?: string, passcode?: string | null) {
   const q = new URLSearchParams({ action: "join", confno });
   if (pwd) q.set("pwd", pwd);
   return `zoommtg://${host}/join?${q.toString()}`;
+}
+
+/**
+ * Which mailbox Gmail opens.
+ *
+ * The /u/{n}/ form numbers accounts by the order they were signed into *this
+ * browser*, so a link built with u/0 opens whichever Google account happens to
+ * be first there. For anyone signed into more than one that is simply the wrong
+ * inbox, and Gmail lands on it rather than on the thread — which looks exactly
+ * like the deep link not working. authuser= names the account instead and lets
+ * Google resolve the index, so the link travels between browsers and profiles.
+ *
+ * Returns a prefix a fragment can be appended to directly.
+ */
+function gmailBase(account?: string, index = 0) {
+  return account && account.includes("@")
+    ? `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(account)}`
+    : `https://mail.google.com/mail/u/${index}/`;
 }
 
 function slackAppFromWeb(web?: string) {
@@ -102,16 +124,21 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
     }
     case "gmail": {
       if (!out.web) {
+        const base = gmailBase(clean(input.account), u);
         const mid = clean(input.messageId);
+        // Gmail's #all/ fragment resolves a *thread* id. Handed a message id it
+        // cannot open — which is most of them, since that is what the API
+        // returns first — it gives up and shows All Mail, so prefer the thread.
+        const thread = clean(input.threadId);
+
         if (mid) {
-          // Searching by RFC-822 id is the most durable Gmail deep link there is:
-          // it survives label moves and works across every signed-in account.
-          out.web = `https://mail.google.com/mail/u/${u}/#search/rfc822msgid:${encodeURIComponent(mid.replace(/[<>]/g, ""))}`;
-        } else if (id) {
-          out.web =
-            kind === "draft"
-              ? `https://mail.google.com/mail/u/${u}/#drafts?compose=${encodeURIComponent(id)}`
-              : `https://mail.google.com/mail/u/${u}/#all/${encodeURIComponent(id)}`;
+          // Searching by RFC-822 id is the most durable Gmail deep link there
+          // is: it survives label moves, archiving and a change of account.
+          out.web = `${base}#search/rfc822msgid:${encodeURIComponent(mid.replace(/[<>]/g, ""))}`;
+        } else if (kind === "draft" && id) {
+          out.web = `${base}#drafts?compose=${encodeURIComponent(id)}`;
+        } else if (thread || id) {
+          out.web = `${base}#all/${encodeURIComponent(thread ?? id!)}`;
         }
       }
       // Gmail's mobile apps handle mail.google.com through app links, so the
@@ -218,6 +245,30 @@ export function fallbackFor(target: LinkTarget, chosen: string | null): string |
   if (!chosen || isHttp(chosen)) return null;
   const web = clean(target.web);
   return web && web !== chosen ? web : null;
+}
+
+/**
+ * The other way to open the same thing.
+ *
+ * `chooseUrl` has to commit to one destination, and it guesses from the user
+ * agent — which cannot tell whether the desktop mail client is actually
+ * installed, or whether someone on a laptop would rather stay in the browser.
+ * So the sheet offers the alternative alongside it instead of being wrong until
+ * the global setting is changed.
+ */
+export function alternateFor(
+  target: LinkTarget,
+  chosen: string | null,
+  platform: Platform,
+): { url: string; kind: "app" | "web" } | null {
+  if (!chosen) return null;
+  const web = clean(target.web) ?? null;
+  const native = clean(isMobilePlatform(platform) ? target.mobile : target.desktop) ?? null;
+
+  // Going to the app: offer the browser. Going to the browser: offer the app,
+  // but only when it is a real app link rather than the same https URL again.
+  if (!isHttp(chosen)) return web && web !== chosen ? { url: web, kind: "web" } : null;
+  return native && native !== chosen && !isHttp(native) ? { url: native, kind: "app" } : null;
 }
 
 export function hasAnyUrl(target: LinkTarget): boolean {

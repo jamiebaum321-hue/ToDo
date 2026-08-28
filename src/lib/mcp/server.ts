@@ -23,7 +23,15 @@ On a scheduled run, always start with \`get_run_context\`, then send the whole l
 
 The single rule that matters: anything in \`alreadyHandled\` has been cleared by the user in the app and must never be raised again. You are looking at a rolling window, so yesterday's unanswered email is still sitting in the mailbox — but if the user marked it done, it is done, whatever the mailbox says.
 
-Every task should carry a \`source\` with the provider's own id and URL, so the app can put a button on the card that opens the exact email, message or meeting. Where you can write the reply, save it to their drafts and pass it in \`draft\` — that turns the task into two taps.`;
+Every task should carry a \`source\` with the provider's own id and URL, so the app can put a button on the card that opens the exact email, message or meeting. Where you can write the reply, save it to their drafts and pass it in \`draft\` — that turns the task into two taps.
+
+That button is the whole point of the app, and a link that lands on a generic inbox is worse than no link at all, so spend the extra call to get the ids right:
+
+- **Gmail** — send \`source.messageId\` (the RFC-822 \`Message-ID\` header, from \`payload.headers\`) whenever you can; it is the only Gmail link that always resolves the thread. Failing that send \`source.threadId\`, because Gmail's deep link resolves a thread id and quietly falls back to All Mail when handed a message id. Always send \`source.account\` — Gmail numbers accounts by browser sign-in order, so without the address the link can open the wrong mailbox.
+- **Outlook / Graph** — send the message id in \`source.externalId\`, and \`source.url\` when the connector gave you \`webLink\`. Send \`source.account\` for the mailbox.
+- **Teams, Slack, Zoom** — send the permalink in \`source.url\`; the app derives the desktop and mobile app links from it.
+
+If a connector hands you a canonical URL, pass it in \`source.url\` — a real permalink always beats one the app has to reconstruct.`;
 
 const RESOURCES = [
   {

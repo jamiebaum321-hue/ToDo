@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  alternateFor,
   chooseUrl,
   deriveLinkTarget,
   detectPlatform,
@@ -35,6 +36,35 @@ describe("deriveLinkTarget", () => {
 
   it("falls back to a Gmail thread id when there is no message id", () => {
     const t = deriveLinkTarget({ provider: "gmail", externalId: "18c9f0" });
+    expect(t.web).toBe("https://mail.google.com/mail/u/0/#all/18c9f0");
+  });
+
+  it("names the Gmail account instead of guessing at /u/0/", () => {
+    // /u/{n}/ follows browser sign-in order, so on a second account u/0 opens
+    // the wrong mailbox and Gmail shows that inbox rather than the thread.
+    const t = deriveLinkTarget({ provider: "gmail", threadId: "18c9f0", account: "jamie@work.com" });
+    expect(t.web).toBe("https://mail.google.com/mail/u/?authuser=jamie%40work.com#all/18c9f0");
+  });
+
+  it("prefers the thread id over the message id — only the thread resolves", () => {
+    const t = deriveLinkTarget({ provider: "gmail", externalId: "1a034151929c4d51", threadId: "18c9f0" });
+    expect(t.web).toBe("https://mail.google.com/mail/u/0/#all/18c9f0");
+  });
+
+  it("still prefers the RFC-822 id over everything, account and all", () => {
+    const t = deriveLinkTarget({
+      provider: "gmail",
+      messageId: "<abc@mail.gmail.com>",
+      threadId: "18c9f0",
+      account: "jamie@work.com",
+    });
+    expect(t.web).toBe(
+      "https://mail.google.com/mail/u/?authuser=jamie%40work.com#search/rfc822msgid:abc%40mail.gmail.com",
+    );
+  });
+
+  it("ignores an account that is not an address", () => {
+    const t = deriveLinkTarget({ provider: "gmail", threadId: "18c9f0", account: "personal" });
     expect(t.web).toBe("https://mail.google.com/mail/u/0/#all/18c9f0");
   });
 
@@ -133,5 +163,38 @@ describe("defaultLabel", () => {
 
   it("stays generic when the provider is unknown", () => {
     expect(defaultLabel("something-else", "source")).toBe("Open the source");
+  });
+});
+
+describe("offering the other way to open it", () => {
+  const outlook = {
+    web: "https://outlook.office.com/mail/deeplink/read/abc",
+    desktop: "ms-outlook://emails/message?restId=abc",
+    mobile: "ms-outlook://emails/message?restId=abc",
+  };
+
+  it("offers the browser when the button goes to the app", () => {
+    const chosen = chooseUrl(outlook, "windows");
+    expect(alternateFor(outlook, chosen, "windows")).toEqual({ url: outlook.web, kind: "web" });
+  });
+
+  it("offers the app when the button goes to the browser", () => {
+    const chosen = chooseUrl(outlook, "windows", "web");
+    expect(alternateFor(outlook, chosen, "windows")).toEqual({ url: outlook.desktop, kind: "app" });
+  });
+
+  it("offers the phone app on a phone, not the desktop one", () => {
+    const target = { ...outlook, desktop: "ms-outlook://desktop", mobile: "ms-outlook://phone" };
+    expect(alternateFor(target, target.web, "ios")).toEqual({ url: "ms-outlook://phone", kind: "app" });
+  });
+
+  it("offers nothing when there is only ever one destination", () => {
+    const gmail = { web: "https://mail.google.com/x", desktop: null, mobile: "https://mail.google.com/x" };
+    expect(alternateFor(gmail, gmail.web, "macos")).toBeNull();
+    expect(alternateFor(gmail, gmail.web, "ios")).toBeNull();
+  });
+
+  it("offers nothing when there is no link at all", () => {
+    expect(alternateFor({ web: null, desktop: null, mobile: null }, null, "macos")).toBeNull();
   });
 });

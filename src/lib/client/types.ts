@@ -33,6 +33,8 @@ export interface BoardPayload {
   };
   user: { name: string | null; email: string; timezone: string };
   lastRun: LastRun | null;
+  /** Live connection tokens, OAuth ones included. Zero means nothing is wired up. */
+  connections: number;
 }
 
 export type TaskAction = "complete" | "reopen" | "dismiss" | "snooze" | "delegate" | "pin" | "move";

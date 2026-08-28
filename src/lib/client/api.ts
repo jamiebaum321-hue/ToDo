@@ -14,6 +14,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 export const api = {
   board: (status = "open") => request<BoardPayload>(`/api/tasks?status=${status}`),
 
+  /** A stamp that changes when the list does. Cheap enough to poll. */
+  boardVersion: () => request<{ version: string }>("/api/board/version"),
+
   act: (id: string, action: TaskAction, extra?: Record<string, unknown>) =>
     request<{ task: TaskDTO; undoable: boolean }>(`/api/tasks/${id}/action`, {
       method: "POST",
