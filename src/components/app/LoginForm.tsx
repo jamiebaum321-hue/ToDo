@@ -22,7 +22,8 @@ export function LoginForm({ firstRun, signupsOpen }: { firstRun: boolean; signup
     setNeedsVerification(false);
     try {
       await postJson("/api/auth/login", { email, password });
-      router.replace("/");
+      const next = new URLSearchParams(window.location.search).get("next");
+      router.replace(next && next.startsWith("/") && !next.startsWith("//") ? next : "/");
       router.refresh();
     } catch (err: any) {
       if (err?.data?.needsVerification) setNeedsVerification(true);

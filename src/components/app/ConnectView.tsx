@@ -34,6 +34,7 @@ export function ConnectView({ counts, tokens: initialTokens }: { counts: Record<
 
   const mcpUrl = `${origin || "https://your-todo-app.com"}/api/mcp`;
   const secret = fresh ?? "todo_••••••••••••••••••••••••";
+  const oauthClient = client === "claude" || client === "chatgpt";
 
   const createToken = async () => {
     setBusy(true);
@@ -65,31 +66,125 @@ export function ConnectView({ counts, tokens: initialTokens }: { counts: Record<
         </p>
       </div>
 
-      {/* Step 1 — the token -------------------------------------------- */}
-      <Step n={1} title="Make a connection token">
-        {fresh ? (
-          <div className="rounded-2xl p-3.5" style={{ background: "var(--tint-quick)", border: "1px solid var(--accent-quick)" }}>
-            <p className="flex items-center gap-1.5 text-[12.5px] font-extrabold" style={{ color: "var(--accent-quick)" }}>
-              <TriangleAlert className="size-3.5" strokeWidth={2.8} />
-              Copy it now — it is not shown again
-            </p>
-            <CopyRow value={fresh} mono />
-          </div>
-        ) : (
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {CLIENTS.map((c) => (
           <button
+            key={c.key}
             type="button"
-            onClick={createToken}
-            disabled={busy}
-            className="inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-[14.5px] font-extrabold transition active:scale-[0.98] disabled:opacity-50"
-            style={{ background: "var(--text)", color: "var(--bg)" }}
+            onClick={() => setClient(c.key)}
+            className="rounded-full px-3 py-1.5 text-[12.5px] font-extrabold transition"
+            style={{
+              background: client === c.key ? "var(--text)" : "transparent",
+              color: client === c.key ? "var(--bg)" : "var(--text-3)",
+              border: `1.5px solid ${client === c.key ? "var(--text)" : "var(--line)"}`,
+            }}
           >
-            {busy ? <Loader2 className="size-[17px] animate-spin" strokeWidth={2.8} /> : <KeyRound className="size-[17px]" strokeWidth={2.8} />}
-            Create a token
+            {c.label}
           </button>
-        )}
+        ))}
+      </div>
 
+      {/* OAuth clients: paste a URL, sign in, allow. Nothing else. ------- */}
+      {oauthClient ? (
+        <Step n={1} title="Add it to your assistant">
+          {client === "claude" ? (
+            <Instructions
+              steps={[
+                "Open Claude → Settings → Connectors → Add custom connector.",
+                "Name it ToDo, paste the server URL below, and press Add.",
+                "Claude opens ToDo in a new tab — sign in if asked, press Allow access, and you are connected. There is no token to paste.",
+              ]}
+            >
+              <Labelled label="Server URL" value={mcpUrl} mono />
+            </Instructions>
+          ) : (
+            <Instructions
+              steps={[
+                "Open ChatGPT → Settings → Connectors → Advanced settings → Create.",
+                "Name it ToDo, paste the server URL below, and choose OAuth for authentication.",
+                "ChatGPT opens ToDo in a new tab — sign in if asked, press Allow access, and you are connected. There is no token to paste.",
+              ]}
+            >
+              <Labelled label="Server URL" value={mcpUrl} mono />
+            </Instructions>
+          )}
+        </Step>
+      ) : (
+        <>
+          <Step n={1} title="Make a connection token">
+            {fresh ? (
+              <div className="rounded-2xl p-3.5" style={{ background: "var(--tint-quick)", border: "1px solid var(--accent-quick)" }}>
+                <p className="flex items-center gap-1.5 text-[12.5px] font-extrabold" style={{ color: "var(--accent-quick)" }}>
+                  <TriangleAlert className="size-3.5" strokeWidth={2.8} />
+                  Copy it now — it is not shown again
+                </p>
+                <CopyRow value={fresh} mono />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={createToken}
+                disabled={busy}
+                className="inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-[14.5px] font-extrabold transition active:scale-[0.98] disabled:opacity-50"
+                style={{ background: "var(--text)", color: "var(--bg)" }}
+              >
+                {busy ? <Loader2 className="size-[17px] animate-spin" strokeWidth={2.8} /> : <KeyRound className="size-[17px]" strokeWidth={2.8} />}
+                Create a token
+              </button>
+            )}
+          </Step>
+
+          <Step n={2} title="Add it to your assistant">
+            {client === "cli" ? (
+              <Instructions steps={["Run this once in a terminal. It stores the connection for every project."]}>
+                <Labelled
+                  label="Command"
+                  value={`claude mcp add --transport http todo ${mcpUrl} --header "Authorization: Bearer ${secret}"`}
+                  mono
+                />
+              </Instructions>
+            ) : (
+              <Instructions steps={["Drop this into your client's MCP config file and restart it."]}>
+                <Labelled
+                  label="mcp.json"
+                  mono
+                  value={JSON.stringify(
+                    {
+                      mcpServers: {
+                        todo: { type: "http", url: mcpUrl, headers: { Authorization: `Bearer ${secret}` } },
+                      },
+                    },
+                    null,
+                    2,
+                  )}
+                />
+              </Instructions>
+            )}
+          </Step>
+        </>
+      )}
+
+      {/* The schedule ---------------------------------------------------- */}
+      <Step n={oauthClient ? 2 : 3} title="Set the morning run">
+        <p className="mb-3 text-[14px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+          In Claude, create a scheduled task for 7:00 am. In ChatGPT, create a scheduled task at the same time. Paste
+          the instructions below as the task prompt — they tell your assistant to sweep every connector, sort what it
+          finds, and never re-raise anything you have already cleared.
+        </p>
+        <CopyBlock value={dailyTriagePrompt({ windowDays: "14" })} label="Copy the schedule prompt" />
+      </Step>
+
+      {/* Every live connection, however it was made ----------------------- */}
+      <section className="mb-5 rounded-[var(--radius-card)] p-4 sm:p-5" style={{ background: "var(--card)", border: "1px solid var(--line)" }}>
+        <h2 className="mb-1 text-[16px] font-extrabold" style={{ color: "var(--text)" }}>
+          Connections
+        </h2>
+        <p className="mb-3 text-[13px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+          An assistant you approve with Allow access appears here on its own, next to any tokens you made by hand.
+          Revoking one cuts that assistant off immediately.
+        </p>
         {tokens.length > 0 ? (
-          <ul className="mt-3 space-y-1.5">
+          <ul className="space-y-1.5">
             {tokens.map((t) => (
               <li
                 key={t.id}
@@ -118,99 +213,17 @@ export function ConnectView({ counts, tokens: initialTokens }: { counts: Record<
               </li>
             ))}
           </ul>
-        ) : null}
-      </Step>
-
-      {/* Step 2 — wire it up -------------------------------------------- */}
-      <Step n={2} title="Add it to your assistant">
-        <div className="mb-3 flex flex-wrap gap-1.5">
-          {CLIENTS.map((c) => (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => setClient(c.key)}
-              className="rounded-full px-3 py-1.5 text-[12.5px] font-extrabold transition"
-              style={{
-                background: client === c.key ? "var(--text)" : "transparent",
-                color: client === c.key ? "var(--bg)" : "var(--text-3)",
-                border: `1.5px solid ${client === c.key ? "var(--text)" : "var(--line)"}`,
-              }}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-
-        {client === "claude" ? (
-          <Instructions
-            steps={[
-              "Open Claude → Settings → Connectors → Add custom connector.",
-              "Name it ToDo and paste the server URL below.",
-              "Under authentication choose a bearer token and paste your token.",
-            ]}
-          >
-            <Labelled label="Server URL" value={mcpUrl} />
-            <Labelled label="Authorization header" value={`Bearer ${secret}`} mono />
-          </Instructions>
-        ) : null}
-
-        {client === "chatgpt" ? (
-          <Instructions
-            steps={[
-              "Open ChatGPT → Settings → Connectors → Create.",
-              "Choose MCP server, paste the URL, and set authentication to a bearer token.",
-              "If the connector form has nowhere for a header, use the second URL — it carries the token in the path.",
-            ]}
-          >
-            <Labelled label="Server URL" value={mcpUrl} />
-            <Labelled label="Authorization header" value={`Bearer ${secret}`} mono />
-            <Labelled label="Or, URL with the token built in" value={`${origin}/api/mcp/t/${fresh ?? "YOUR_TOKEN"}`} mono />
-          </Instructions>
-        ) : null}
-
-        {client === "cli" ? (
-          <Instructions steps={["Run this once in a terminal. It stores the connection for every project."]}>
-            <Labelled
-              label="Command"
-              value={`claude mcp add --transport http todo ${mcpUrl} --header "Authorization: Bearer ${secret}"`}
-              mono
-            />
-          </Instructions>
-        ) : null}
-
-        {client === "json" ? (
-          <Instructions steps={["Drop this into your client's MCP config file and restart it."]}>
-            <Labelled
-              label="mcp.json"
-              mono
-              value={JSON.stringify(
-                {
-                  mcpServers: {
-                    todo: { type: "http", url: mcpUrl, headers: { Authorization: `Bearer ${secret}` } },
-                  },
-                },
-                null,
-                2,
-              )}
-            />
-          </Instructions>
-        ) : null}
-      </Step>
-
-      {/* Step 3 — the schedule ------------------------------------------ */}
-      <Step n={3} title="Set the morning run">
-        <p className="mb-3 text-[14px] leading-relaxed" style={{ color: "var(--text-3)" }}>
-          In Claude, create a scheduled task for 7:00 am. In ChatGPT, create a scheduled task at the same time. Paste
-          the instructions below as the task prompt — they tell your assistant to sweep every connector, sort what it
-          finds, and never re-raise anything you have already cleared.
-        </p>
-        <CopyBlock value={dailyTriagePrompt({ windowDays: "14" })} label="Copy the schedule prompt" />
-      </Step>
+        ) : (
+          <p className="text-[13px] font-semibold" style={{ color: "var(--text-3)" }}>
+            Nothing connected yet.
+          </p>
+        )}
+      </section>
 
       <p className="mt-8 px-1 text-[12.5px] leading-relaxed" style={{ color: "var(--text-3)" }}>
-        A token is as good as your list — anyone holding one can read and rewrite it. The URL-with-token variant is
-        there for connector forms that have nowhere to put a header; prefer the header where you can, since URLs end up
-        in logs and browser history. Revoke a token above at any time and it stops working immediately.
+        A connection is as good as your list — anyone holding one can read and rewrite it. Signing in through Claude or
+        ChatGPT never shows you a token at all; the ones above exist for command-line and config-file setups, where the
+        header is the right place for them. Revoke anything above at any time and it stops working immediately.
       </p>
     </PageShell>
   );

@@ -132,3 +132,27 @@ export const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, MCP-Protocol-Version",
 };
+
+export interface Grant {
+  t: "grant";
+  uid: string;
+  clientId: string;
+  clientName: string;
+  redirectUri: string;
+  challenge: string;
+  scope: string;
+  state: string;
+  exp: number;
+}
+
+/** The consent form round-trips one of these, so approval cannot be forged or replayed later. */
+export function makeGrant(g: Omit<Grant, "t" | "exp">): string {
+  const grant: Grant = { ...g, t: "grant", exp: Date.now() + 15 * 60 * 1000 };
+  return sign(grant);
+}
+
+export function readGrant(blob: string): Grant | null {
+  const g = verify<Grant>(blob);
+  if (!g || g.t !== "grant" || g.exp < Date.now()) return null;
+  return g;
+}

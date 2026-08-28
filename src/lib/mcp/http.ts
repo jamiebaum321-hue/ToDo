@@ -4,6 +4,7 @@ import type { Actor } from "../auth";
 import { handleMessage } from "./server";
 import { rateLimit, rateLimitHeaders } from "../rate-limit";
 import { ERROR_CODES, fail, LATEST_PROTOCOL_VERSION } from "./protocol";
+import { baseUrl } from "../oauth";
 
 const JSON_HEADERS = {
   "content-type": "application/json",
@@ -21,7 +22,10 @@ function unauthorized(detail: string) {
       status: 401,
       headers: {
         ...JSON_HEADERS,
-        "www-authenticate": 'Bearer realm="ToDo MCP", error="invalid_token"',
+        "www-authenticate":
+          'Bearer realm="ToDo MCP", error="invalid_token", resource_metadata="' +
+          baseUrl() +
+          '/.well-known/oauth-protected-resource"',
       },
     },
   );
