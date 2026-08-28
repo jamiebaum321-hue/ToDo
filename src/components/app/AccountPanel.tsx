@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, KeyRound, LogOut, Monitor, Smartphone, TriangleAlert } from "lucide-react";
-import { Logo } from "@/components/Logo";
+import { Doodle } from "@/components/Doodle";
 import { relativeLabel } from "@/lib/time";
 
 interface SessionRow {
@@ -91,7 +91,13 @@ export function AccountPanel({ user }: { user: { name: string | null; email: str
       </h2>
 
       <div className="mt-3 flex items-center gap-3">
-        <Logo size={44} />
+        {/* The mascot's face stands in for an avatar — this is the only "you" in the app. */}
+        <span
+          className="grid size-11 shrink-0 place-items-center rounded-full"
+          style={{ background: "var(--bg-alt)", color: "var(--text-2)" }}
+        >
+          <Doodle name="profile" size={30} />
+        </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-[15px] font-extrabold" style={{ color: "var(--text)" }}>
             {user.name ?? user.email}

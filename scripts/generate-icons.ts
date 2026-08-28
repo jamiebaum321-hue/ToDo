@@ -1,11 +1,12 @@
 /**
  * Build every brand asset from `assets/logo-source.png`.
  *
- * The source is only 176px, so a plain upscale would go soft exactly where an
- * app icon is judged. The logo is line art in two colours, though, which means
- * we can upscale and then re-crisp: remap each pixel's ink coverage through a
- * steep curve so edges snap back to hard while the anti-aliasing that makes
- * curves look smooth survives.
+ * The source is a 1263px master, so every size below is a downscale and the
+ * detail is really there rather than invented. What the remap below still
+ * earns its keep for is colour: the logo is line art in exactly two tones, and
+ * pushing every pixel's ink coverage through a mild curve pins it to the brand
+ * cream and ink instead of whatever the export left behind, and firms up edges
+ * that a downscale always softens a little.
  *
  *   npm run gen:icons
  */
@@ -24,8 +25,12 @@ const CREAM_HEX = "#FAF4EA";
 
 const CREAM_LUM = 245;
 const INK_LUM = 12;
-/** Higher = harder edges. 3.2 keeps the hand-drawn wobble without going jaggy. */
-const CRISPNESS = 3.2;
+/**
+ * Higher = harder edges. This was 3.2 when the source was a 176px thumbnail
+ * and every size was an upscale; against the real master that much would eat
+ * the hand-drawn wobble, so it is now just enough to undo downscale softening.
+ */
+const CRISPNESS = 1.4;
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const crisp = (t: number) => clamp01((t - 0.5) * CRISPNESS + 0.5);
@@ -38,13 +43,16 @@ async function buildMaster(size: number): Promise<Buffer> {
   const [colour, alpha] = await Promise.all([
     sharp(SOURCE)
       .flatten({ background: CREAM_HEX })
-      .resize(size, size, { kernel: "lanczos3", fit: "fill" })
+      // The master is 1263x1246 rather than square, so "contain" keeps the
+      // disc a circle where "fill" would stretch it a percent or so wide.
+      .resize(size, size, { kernel: "lanczos3", fit: "contain", background: CREAM_HEX })
       .raw()
       .toBuffer({ resolveWithObject: true }),
     sharp(SOURCE)
       .ensureAlpha()
       .extractChannel(3)
-      .resize(size, size, { kernel: "lanczos3", fit: "fill" })
+      // One channel here, so black is the transparent side of the alpha mask.
+      .resize(size, size, { kernel: "lanczos3", fit: "contain", background: "#000000" })
       .raw()
       .toBuffer({ resolveWithObject: true }),
   ]);

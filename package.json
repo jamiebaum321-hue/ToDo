@@ -2,7 +2,7 @@
   "name": "todo-mcp",
   "version": "1.0.0",
   "private": true,
-  "description": "ToDo — an agent-filled task inbox. Your Claude or ChatGPT subscription connects over MCP, triages every connector into four buckets, and this app makes each task one tap away from done.",
+  "description": "ToDo \u2014 an agent-filled task inbox. Your Claude or ChatGPT subscription connects over MCP, triages every connector into four buckets, and this app makes each task one tap away from done.",
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "tsx scripts/build.ts",
@@ -20,7 +20,8 @@
     "postinstall": "prisma generate",
     "worker": "tsx scripts/worker.ts",
     "build:no-migrate": "SKIP_MIGRATE=1 tsx scripts/build.ts",
-    "db:deploy": "prisma migrate deploy"
+    "db:deploy": "prisma migrate deploy",
+    "gen:doodles": "tsx scripts/generate-doodles.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

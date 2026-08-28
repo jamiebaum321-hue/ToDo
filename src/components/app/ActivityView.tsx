@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ShieldCheck, Sparkles } from "lucide-react";
+import { Doodle } from "@/components/Doodle";
 import { relativeLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { MobileHeader, PageShell } from "./Shell";
@@ -52,7 +53,8 @@ export function ActivityView({
       <MobileHeader subtitle="Activity" />
 
       <div className="mb-5 hidden lg:block">
-        <h1 className="text-[27px] font-extrabold tracking-tight" style={{ color: "var(--text)" }}>
+        <h1 className="flex items-center gap-3 text-[27px] font-extrabold tracking-tight" style={{ color: "var(--text)" }}>
+          <Doodle name="calendar" size={38} style={{ color: "var(--text-2)" }} />
           Activity
         </h1>
         <p className="mt-2 max-w-[58ch] text-[14.5px] leading-relaxed" style={{ color: "var(--text-3)" }}>
@@ -79,6 +81,7 @@ export function ActivityView({
           </ul>
         ) : (
           <EmptyState
+            doodle="calendar"
             title="No runs yet"
             body="Once your assistant sweeps your connectors, each run shows up here with what it changed."
           />
@@ -122,6 +125,7 @@ export function ActivityView({
         </>
       ) : (
         <EmptyState
+          doodle="my-tasks-2"
           title="Nothing cleared yet"
           body="As you tick things off, they land here — and your assistant stops suggesting them."
         />

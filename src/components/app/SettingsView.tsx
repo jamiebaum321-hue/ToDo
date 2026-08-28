@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Bell, BellOff, Check, Loader2, Send, Smartphone } from "lucide-react";
+import { Doodle } from "@/components/Doodle";
 import { api } from "@/lib/client/api";
 import { usePush } from "@/hooks/usePush";
 import { MobileHeader, PageShell } from "./Shell";
@@ -75,7 +76,8 @@ export function SettingsView({
       <MobileHeader subtitle="Settings" />
 
       <div className="mb-6 hidden items-center justify-between lg:flex">
-        <h1 className="text-[27px] font-extrabold tracking-tight" style={{ color: "var(--text)" }}>
+        <h1 className="flex items-center gap-3 text-[27px] font-extrabold tracking-tight" style={{ color: "var(--text)" }}>
+          <Doodle name="settings" size={38} style={{ color: "var(--text-2)" }} />
           Settings
         </h1>
         {saved ? (

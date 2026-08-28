@@ -11,6 +11,12 @@
  */
 import { spawnSync } from "node:child_process";
 import { describeResolution, resolveDirectUrl, resolveRuntimeUrl } from "../src/lib/db-url";
+import { loadEnv } from "./load-env";
+
+// A host that injects the connection string still wins — loadEnv never
+// overwrites — but this makes a local `npm run build` work off .env, the same
+// way the seed and the worker already do.
+loadEnv();
 
 const runtimeUrl = resolveRuntimeUrl();
 const directUrl = resolveDirectUrl();
