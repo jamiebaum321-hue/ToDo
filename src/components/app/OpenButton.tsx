@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { ArrowUpRight, ExternalLink, Loader2 } from "lucide-react";
 import { chooseUrl, fallbackFor, type LinkPreference, type LinkTarget } from "@/lib/deeplinks";
 import { usePlatform } from "@/hooks/usePlatform";
+import { isNative, openExternal } from "@/lib/client/native";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -47,6 +48,14 @@ export function OpenButton({
   const open = useCallback(
     (href: string, native: boolean) => {
       onOpened?.();
+
+      // In a native shell the OS decides which app claims the URL, and an
+      // https link belongs in the system browser rather than in the webview.
+      if (isNative()) {
+        setState("opening");
+        void openExternal(href).then((handled) => setState(handled ? "idle" : "idle"));
+        return;
+      }
 
       if (!native) {
         window.open(href, "_blank", "noopener,noreferrer");

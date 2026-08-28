@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/client/api";
 import { detectPlatform } from "@/lib/deeplinks";
+import { isNative, registerNativePush, unregisterNativePush } from "@/lib/client/native";
 
 export type PushState = "unsupported" | "needs-install" | "denied" | "off" | "on" | "working";
 
@@ -22,6 +23,19 @@ export function usePush(publicKey: string | null) {
 
   const evaluate = useCallback(async () => {
     if (typeof window === "undefined") return;
+
+    // Inside a native shell the OS owns permission, and there is no service
+    // worker to ask — so read the platform's answer instead of the browser's.
+    if (isNative()) {
+      try {
+        const { PushNotifications } = await import("@capacitor/push-notifications");
+        const permission = await PushNotifications.checkPermissions();
+        setState(permission.receive === "granted" ? "on" : permission.receive === "denied" ? "denied" : "off");
+      } catch {
+        setState("off");
+      }
+      return;
+    }
 
     const standalone =
       window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone === true;
@@ -51,6 +65,21 @@ export function usePush(publicKey: string | null) {
   }, [evaluate]);
 
   const enable = useCallback(async () => {
+    if (isNative()) {
+      setState("working");
+      setError(null);
+      const result = await registerNativePush();
+      if (result.ok) {
+        setState("on");
+      } else {
+        setState(result.reason === "denied" ? "denied" : "off");
+        if (result.reason && result.reason !== "denied") {
+          setError("Could not register this device for notifications.");
+        }
+      }
+      return;
+    }
+
     if (!publicKey) {
       setError("This server has no push keys configured yet.");
       return;
@@ -84,6 +113,11 @@ export function usePush(publicKey: string | null) {
 
   const disable = useCallback(async () => {
     setState("working");
+    if (isNative()) {
+      await unregisterNativePush();
+      setState("off");
+      return;
+    }
     try {
       const reg = await navigator.serviceWorker.getRegistration();
       const sub = await reg?.pushManager.getSubscription();

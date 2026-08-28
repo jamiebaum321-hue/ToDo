@@ -87,6 +87,47 @@ Undo a completion and the suppression is lifted, so it can legitimately come bac
 
 <p align="center"><em>Connect generates the token and hands you the exact settings and schedule prompt.</em></p>
 
+## Public sign-ups, and what that needed
+
+Sign-ups are open by default (`ALLOW_SIGNUPS=false` closes an instance after its
+first account). Opening the door meant building the things an open registration
+endpoint cannot go without:
+
+- **Email verification.** An address must be confirmed before it can sign in, so
+  nobody can occupy an address that is not theirs. Links are single-use, hashed
+  at rest, expiring, and issuing a new one retires the last.
+- **Password reset**, which retires every session — whoever is resetting may be
+  locking someone else out.
+- **Rate limiting**, counted in the database rather than in memory. Serverless
+  instances share no memory, so an in-process limiter resets on every cold start
+  and counts separately per instance, which is no limit at all.
+- **No account enumeration.** Registering an address that already exists, and
+  resetting one that does not, return exactly what the ordinary case returns.
+- **Account deletion and export**, in-app and immediate. Deletion cascades to
+  every row; the App Store requires it of any app that creates accounts.
+
+Verification and reset need somewhere to send mail — set `RESEND_API_KEY`, or
+the `SMTP_*` variables. With neither, links print to the server console and the
+first account is trusted, so a self-hosted instance still works out of the box.
+
+## The iOS and Android apps
+
+`ios/` and `android/` hold Capacitor shells around the deployed site. They earn
+their place by doing what a browser tab cannot: **notifications on iOS**, which
+Safari grants only to home-screen installs and never inside a webview, plus
+universal links that open a task straight from a notification, and hand-off to
+the real Outlook or Gmail app when you tap "Open in".
+
+Both platforms notify through Firebase — one integration, one code path, and
+Firebase forwards to APNs for iOS. Web push still covers browsers and installed
+PWAs, and the two run side by side.
+
+**Building them needs things this repository cannot provide**: a Mac with Xcode,
+an Apple Developer account, and a Google Play account.
+[`docs/APP-STORES.md`](docs/APP-STORES.md) has the full setup, the privacy-label
+answers both stores ask for, and an honest note about Apple's Guideline 4.2
+rejection risk for wrapper apps.
+
 ## Getting started
 
 ```bash
@@ -282,15 +323,20 @@ src/
     api/cron/tick/         scheduled housekeeping
   lib/
     db-url.ts              resolving whatever connection strings the host injected
+    mail.ts                Resend / SMTP / console, and the email templates
+    verification.ts        one-time links for confirmation, reset and email change
+    rate-limit.ts          fixed windows counted in the database
+    push-fcm.ts            native notifications for the iOS and Android shells
     sync.ts                the write path: upsert, replace, refuse
     suppression.ts         the memory that stops repeats
     deeplinks.ts           three URLs per link, and picking the right one
     actions.ts             complete / snooze / delegate / undo
     mcp/                   protocol, tools, prompts, transport
   components/app/          the UI
+ios/  android/                 Capacitor shells — see docs/APP-STORES.md
 prisma/schema.prisma       PostgreSQL; no enums or Json columns, so it reads as plain SQL
 prisma/migrations/         checked-in SQL, applied by `prisma migrate deploy`
-tests/                     137 tests, including tenant-isolation and Postgres integration suites
+tests/                     162 tests: auth, tenant isolation, sync, MCP, deep links
 ```
 
 ### Commands
@@ -298,7 +344,7 @@ tests/                     137 tests, including tenant-isolation and Postgres in
 ```bash
 npm run dev            # development server
 npm run setup          # migrate + seed
-npm test               # 137 tests, against a real Postgres
+npm test               # 162 tests, against a real Postgres
 npm run typecheck      # tsc --noEmit
 npm run build          # migrate + production build
 npm run build:no-migrate  # build only, for CI and Docker images

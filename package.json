@@ -26,6 +26,12 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/browser": "^8.0.4",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/push-notifications": "^8.1.2",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.3",
     "@prisma/client": "^6.2.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
@@ -40,6 +46,10 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/ios": "^8.5.0",
     "@eslint/eslintrc": "^3.3.6",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.5",

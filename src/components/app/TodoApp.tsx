@@ -16,6 +16,7 @@ import { TaskSheet } from "./TaskSheet";
 import { Toasts } from "./Toasts";
 import { QuickAdd } from "./QuickAdd";
 import { ServiceWorkerRegistrar } from "./ServiceWorker";
+import { NativeBridge } from "./NativeBridge";
 import { InstallPrompt } from "./InstallPrompt";
 import { bucketVars, BUCKET_ICON } from "./icons";
 import { Logo } from "@/components/Logo";
@@ -26,6 +27,7 @@ export function TodoApp({ initial }: { initial: BoardPayload }) {
       <Board />
       <Toasts />
       <ServiceWorkerRegistrar />
+      <NativeBridge />
     </TodoProvider>
   );
 }
