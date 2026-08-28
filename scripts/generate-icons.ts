@@ -22,6 +22,8 @@ const PUBLIC = join(ROOT, "public");
 export const CREAM = { r: 250, g: 244, b: 234 };
 export const INK = { r: 14, g: 14, b: 12 };
 const CREAM_HEX = "#FAF4EA";
+/** The dark theme's page background, for the dark splash screen. */
+const DARK_HEX = "#131209";
 
 const CREAM_LUM = 245;
 const INK_LUM = 12;
@@ -149,9 +151,36 @@ async function buildOgImage(master: Buffer): Promise<Buffer> {
     .toBuffer();
 }
 
+/**
+ * A logo centred on a square canvas, with room around it. Capacitor's asset
+ * generator crops and rescales these into every launcher size iOS and Android
+ * ask for, so they only need to be big and correctly padded.
+ */
+const TRANSPARENT = { r: 0, g: 0, b: 0, alpha: 0 };
+
+async function canvas(
+  master: Buffer,
+  size: number,
+  logoScale: number,
+  background: string | typeof TRANSPARENT,
+): Promise<Buffer> {
+  const inner = Math.round(size * logoScale);
+  const resized = sharp(master).resize(inner, inner, { kernel: "lanczos3" });
+  // On a solid ground, flatten the disc's own alpha onto it so the two creams
+  // meet cleanly; on a transparent one, keep the cutout.
+  const logo = await (typeof background === "string" ? resized.flatten({ background }) : resized).toBuffer();
+  const offset = Math.round((size - inner) / 2);
+
+  return sharp({ create: { width: size, height: size, channels: 4, background } })
+    .composite([{ input: logo, top: offset, left: offset }])
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+}
+
 async function main() {
   await mkdir(join(PUBLIC, "icons"), { recursive: true });
   await mkdir(join(PUBLIC, "brand"), { recursive: true });
+  await mkdir(join(ROOT, "native/assets"), { recursive: true });
 
   const master = await buildMaster(1024);
   const written: string[] = [];
@@ -195,6 +224,21 @@ async function main() {
   for (const { size, png } of icoPngs) await write(`public/icons/favicon-${size}.png`, png);
 
   await write("public/og.png", await buildOgImage(master));
+
+  // What `npx @capacitor/assets generate` reads. Keeping these generated from
+  // the same master means the launcher and App Store icons are reproducible
+  // from the repo rather than being binaries nobody can rebuild.
+  await write("native/assets/icon.png", await canvas(master, 1024, 0.92, CREAM_HEX));
+  // Android crops an adaptive icon hard, so the foreground sits well inside.
+  await write("native/assets/icon-foreground.png", await canvas(master, 1024, 0.62, TRANSPARENT));
+  await write(
+    "native/assets/icon-background.png",
+    await sharp({ create: { width: 1024, height: 1024, channels: 4, background: CREAM_HEX } })
+      .png({ compressionLevel: 9 })
+      .toBuffer(),
+  );
+  await write("native/assets/splash.png", await canvas(master, 2732, 0.22, CREAM_HEX));
+  await write("native/assets/splash-dark.png", await canvas(master, 2732, 0.22, DARK_HEX));
 
   console.log("Brand assets written:\n  " + written.join("\n  "));
 }
