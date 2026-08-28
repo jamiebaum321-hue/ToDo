@@ -31,6 +31,17 @@ export async function loadBoard(user: User, status: "open" | "all" = "all"): Pro
     orderBy: { startedAt: "desc" },
   });
 
+  // "Has it ever run" is not the same question as "is anything connected".
+  // An assistant that has just been approved has no runs yet, and telling
+  // someone to go and connect one at that point is simply wrong.
+  const connections = await prisma.apiToken.count({
+    where: {
+      userId: user.id,
+      revokedAt: null,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    },
+  });
+
   return {
     tasks: dtos,
     counts,
@@ -43,6 +54,7 @@ export async function loadBoard(user: User, status: "open" | "all" = "all"): Pro
       theme: settings.theme as "system" | "light" | "dark",
     },
     user: { name: user.name, email: user.email, timezone: user.timezone },
+    connections,
     lastRun: lastRun
       ? {
           at: lastRun.startedAt.toISOString(),

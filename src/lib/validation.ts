@@ -27,6 +27,8 @@ export const linkInput = z
     mobile: z.string().trim().max(2000).optional(),
     externalId: z.string().trim().max(400).optional(),
     messageId: z.string().trim().max(400).optional(),
+    threadId: z.string().trim().max(400).optional(),
+    account: z.string().trim().max(160).optional(),
     accountIndex: z.number().int().min(0).max(9).optional(),
     passcode: z.string().trim().max(64).optional(),
     primary: z.boolean().optional(),
@@ -51,6 +53,8 @@ export const sourceInput = z.object({
   externalId: z.string().trim().max(400).optional(),
   /** RFC-822 Message-ID. The most durable id an email can give us. */
   messageId: z.string().trim().max(400).optional(),
+  /** Gmail's thread id — what its #all/ deep link actually resolves. */
+  threadId: z.string().trim().max(400).optional(),
   account: z.string().trim().max(160).optional(),
   from: z.string().trim().max(200).optional(),
   subject: z.string().trim().max(400).optional(),

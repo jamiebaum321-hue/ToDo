@@ -107,6 +107,50 @@ export function TodoProvider({ initial, children }: { initial: BoardPayload; chi
     };
   }, [refresh]);
 
+  /*
+   * An agent sweep happens somewhere else entirely, so a window that is already
+   * open and focused never hears about it — which is why the list only appeared
+   * after a manual reload.
+   *
+   * Poll a stamp rather than the board: a few dozen bytes every 25 seconds, and
+   * the board is only re-fetched on the ticks where something actually changed,
+   * which for most of the day is none of them. The interval is torn down while
+   * the tab is hidden, so a backgrounded tab costs nothing at all.
+   */
+  useEffect(() => {
+    let seen: string | null = null;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const check = async () => {
+      try {
+        const { version } = await api.boardVersion();
+        if (seen !== null && version !== seen) await refresh();
+        seen = version;
+      } catch {
+        // Offline, or the session lapsed. The next tick tries again; the focus
+        // listener above covers the case where the tab was asleep for it.
+      }
+    };
+
+    const start = () => {
+      if (timer || document.visibilityState !== "visible") return;
+      void check();
+      timer = setInterval(check, 25_000);
+    };
+    const stop = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+    };
+
+    start();
+    const onVisibility = () => (document.visibilityState === "visible" ? start() : stop());
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [refresh]);
+
   const applyTask = useCallback((task: TaskDTO) => {
     setBoard((prev) => {
       if (!prev) return prev;

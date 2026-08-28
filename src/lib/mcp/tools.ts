@@ -40,10 +40,17 @@ const SOURCE_SCHEMA = {
     ),
     type: str("email | message | meeting | event | file | call"),
     externalId: str(
-      "The provider's own id for the item — a Microsoft Graph message id, a Gmail thread id, a Zoom meeting number. This is what makes the task stable across runs.",
+      "The provider's own id for the item — a Microsoft Graph message id, a Gmail message id, a Zoom meeting number. This is what makes the task stable across runs.",
     ),
-    messageId: str("The RFC-822 Message-ID header, if you have it. The most durable Gmail deep link is built from this."),
-    account: str("Which mailbox or workspace this came from, e.g. 'jamie@company.com'."),
+    messageId: str(
+      "REQUIRED for Gmail if you can get it: the RFC-822 Message-ID header (Gmail API: the 'Message-ID' entry in payload.headers). It makes the only Gmail link that always resolves — it survives archiving, label moves and a different signed-in account. Without it the button often lands on the inbox instead of the thread.",
+    ),
+    threadId: str(
+      "Gmail's threadId (every messages.get returns one). Gmail's deep link resolves a THREAD id, not a message id, so send this whenever you have no Message-ID header — otherwise the link opens All Mail.",
+    ),
+    account: str(
+      "REQUIRED when the user has more than one account: the mailbox address, e.g. 'jamie@company.com'. Gmail's /u/0/ numbering follows whatever order accounts were signed into the browser, so without this the link can open the wrong inbox entirely.",
+    ),
     from: str("Sender, ideally 'Bob Whitaker <bob@acme.com>'."),
     subject: str("Original subject line or message title."),
     snippet: str("A short quote from the original so the task has context without opening it."),
@@ -71,6 +78,9 @@ const LINKS_SCHEMA = {
       desktop: str("Desktop app URL."),
       mobile: str("Mobile app URL."),
       externalId: str("Provider id, so the app can derive the URLs it is missing."),
+      messageId: str("RFC-822 Message-ID, for a mail link the app should derive."),
+      threadId: str("Gmail thread id, for a mail link the app should derive."),
+      account: str("Mailbox address this link belongs to."),
       primary: bool("Show this as the main button."),
     },
   },

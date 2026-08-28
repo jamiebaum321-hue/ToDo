@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { ArrowUpRight, ExternalLink, Loader2 } from "lucide-react";
-import { chooseUrl, fallbackFor, type LinkPreference, type LinkTarget } from "@/lib/deeplinks";
+import { alternateFor, chooseUrl, fallbackFor, type LinkPreference, type LinkTarget } from "@/lib/deeplinks";
 import { usePlatform } from "@/hooks/usePlatform";
 import { isNative, openExternal } from "@/lib/client/native";
 import { cn } from "@/lib/utils";
@@ -44,6 +44,7 @@ export function OpenButton({
   const url = chooseUrl(target, platform, preference);
   const webFallback = fallbackFor(target, url);
   const isNativeScheme = Boolean(url && !/^https?:/i.test(url));
+  const alternate = alternateFor(target, url, platform);
 
   const open = useCallback(
     (href: string, native: boolean) => {
@@ -121,6 +122,17 @@ export function OpenButton({
         <p className="px-1 text-[12px]" style={{ color: "var(--text-3)" }}>
           {hint}
         </p>
+      ) : null}
+
+      {alternate && state === "idle" ? (
+        <button
+          type="button"
+          onClick={() => open(alternate.url, alternate.kind === "app")}
+          className="px-1 text-[12.5px] font-semibold underline underline-offset-2"
+          style={{ color: "var(--text-3)" }}
+        >
+          {alternate.kind === "app" ? "Open in the app instead" : "Open in the browser instead"}
+        </button>
       ) : null}
 
       {state === "stuck" && webFallback ? (

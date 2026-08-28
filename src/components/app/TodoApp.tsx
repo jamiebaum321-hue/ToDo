@@ -179,7 +179,7 @@ function Board() {
 
       {/* The list */}
       {visible.length === 0 && total === 0 && !showDone ? (
-        <FirstRunEmpty hasEverSynced={Boolean(board?.lastRun)} />
+        <FirstRunEmpty connected={(board?.connections ?? 0) > 0} hasEverSynced={Boolean(board?.lastRun)} />
       ) : visible.length === 0 ? (
         <EmptyState
           doodle={query ? "search" : "my-tasks-2"}
@@ -301,7 +301,12 @@ function LastRunStrip({
 }
 
 /** Before the first sync there is nothing to show, so show the way in instead. */
-function FirstRunEmpty({ hasEverSynced }: { hasEverSynced: boolean }) {
+/**
+ * Three genuinely different empty lists, and telling them apart matters: being
+ * told to go and connect an assistant you connected a minute ago reads as the
+ * app not having noticed.
+ */
+function FirstRunEmpty({ connected, hasEverSynced }: { connected: boolean; hasEverSynced: boolean }) {
   if (hasEverSynced) return <EmptyState />;
 
   return (
@@ -310,18 +315,19 @@ function FirstRunEmpty({ hasEverSynced }: { hasEverSynced: boolean }) {
         <Logo size={104} />
       </div>
       <h3 className="mt-5 text-[20px] font-extrabold" style={{ color: "var(--text)" }}>
-        Your list is empty — for now
+        {connected ? "Connected — nothing swept yet" : "Your list is empty — for now"}
       </h3>
       <p className="mx-auto mt-2 max-w-[40ch] text-[14.5px] leading-relaxed" style={{ color: "var(--text-3)" }}>
-        Connect Claude or ChatGPT and it will read your mail, calendar and chat, then fill this in every morning with
-        what actually needs you.
+        {connected
+          ? "Your assistant can reach this list. Ask it to sweep your mail and calendar now, or set the morning run and it will fill this in by itself."
+          : "Connect Claude or ChatGPT and it will read your mail, calendar and chat, then fill this in every morning with what actually needs you."}
       </p>
       <Link
         href="/connect"
         className="mt-6 inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-[15px] font-extrabold transition active:scale-[0.98]"
         style={{ background: "var(--text)", color: "var(--bg)" }}
       >
-        Connect your assistant
+        {connected ? "Set the morning run" : "Connect your assistant"}
       </Link>
     </div>
   );
