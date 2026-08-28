@@ -12,7 +12,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
  *
  * Set CAP_SERVER_URL at build time to point a build at staging.
  */
-const server = process.env.CAP_SERVER_URL || "https://todo.example.com";
+const server = process.env.CAP_SERVER_URL || "https://tasks2do.app";
 
 const config: CapacitorConfig = {
   appId: process.env.CAP_APP_ID || "com.todoapp.inbox",
