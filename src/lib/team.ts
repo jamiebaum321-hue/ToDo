@@ -98,6 +98,29 @@ export async function listTeam(userId: string): Promise<TeamMemberDTO[]> {
 }
 
 /**
+ * Match what the agent wrote against who actually exists.
+ *
+ * The roster is sent to the assistant when the connection is made, and people
+ * leave — so an agent can be working from a name that was accurate a month ago.
+ * Accept the obvious spellings of a real person, and let the caller decide what
+ * to do about a name that matches nobody.
+ */
+export function resolveDelegate(input: string, team: TeamMemberDTO[]): TeamMemberDTO | null {
+  const q = input.trim().toLowerCase();
+  if (!q || team.length === 0) return null;
+
+  const byName = team.find((m) => m.name.toLowerCase() === q);
+  if (byName) return byName;
+
+  const byEmail = team.find((m) => m.email && m.email.toLowerCase() === q);
+  if (byEmail) return byEmail;
+
+  // "Julie" for "Julie Alvarez" — but not when there are two Julies.
+  const byFirstName = team.filter((m) => m.name.toLowerCase().split(/\s+/)[0] === q);
+  return byFirstName.length === 1 ? byFirstName[0] : null;
+}
+
+/**
  * The roster as the agent should read it: names, what each covers, and how much
  * they can decide without going back to the user.
  */
@@ -115,5 +138,7 @@ export function describeTeamForAgent(team: TeamMemberDTO[]): string {
   return [
     "The user's team. Put something in `delegate` only when one of these people could genuinely carry it, and name them in `delegateTo`:",
     ...lines,
+    "",
+    "People join and leave, and this list was written when the connection was made. `get_run_context` returns the current one on every run — treat that as the truth, and if `sync_tasks` reports a name it does not recognise, take the roster it hands back rather than the one above.",
   ].join("\n");
 }

@@ -288,6 +288,24 @@ export const TOOLS: ToolDefinition[] = [
   },
 
   {
+    name: "list_team",
+    title: "Who work can go to",
+    description:
+      "The people the user can hand work to right now, with what each covers and how much they can decide. Read this before putting anything in the `delegate` bucket. The roster you were given when you connected can be months old — people join and leave — so check here rather than trusting it, and use the exact `name` in `delegateTo`.",
+    annotations: { readOnlyHint: true },
+    inputSchema: { type: "object", properties: {} },
+    handler: async (_args, actor) => {
+      const team = await listTeam(actor.user.id);
+      return dataResult(
+        team.length === 0
+          ? "Nobody on the team yet — do not use the delegate bucket."
+          : `${team.length} on the team: ${team.map((m) => m.name).join(", ")}.`,
+        { team, guidance: describeTeamForAgent(team) },
+      );
+    },
+  },
+
+  {
     name: "get_handled_items",
     title: "What the user already did",
     description:
