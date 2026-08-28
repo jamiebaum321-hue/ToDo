@@ -30,13 +30,20 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String  @id @default(cuid())
+  email        String  @unique
   name         String?
   passwordHash String
-  timezone     String   @default("America/New_York")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  timezone     String  @default("America/New_York")
+
+  /// Null until the address is confirmed. Sign-in is refused before that, so a
+  /// stranger cannot occupy someone else's email.
+  emailVerified        DateTime?
+  /// Bumped on password change and on reset, so old sessions can be cut loose.
+  credentialsChangedAt DateTime  @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   settings      Settings?
   sessions      Session[]
@@ -47,16 +54,20 @@ model User {
   agentRuns     AgentRun[]
   pushDevices   PushDevice[]
   notifications NotificationLog[]
+  verifications VerificationToken[]
 }
 
 /// Browser cookie session. Only the SHA-256 hash of the token is stored.
 model Session {
-  id        String   @id @default(cuid())
-  userId    String
-  tokenHash String   @unique
-  userAgent String?
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  userAgent  String?
+  /// Coarse location and IP, so the session list is recognisable to its owner.
+  ip         String?
+  lastSeenAt DateTime @default(now())
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -83,6 +94,37 @@ model ApiToken {
   agentRuns AgentRun[]
 
   @@index([userId])
+}
+
+/// One-time links sent by email. Only the SHA-256 hash is stored, so a leaked
+/// database row cannot be replayed as a login.
+/// purpose: "verify_email" | "password_reset" | "change_email"
+model VerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  purpose   String
+  tokenHash String    @unique
+  /// For change_email: the address being moved to.
+  payload   String?
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
+}
+
+/// Fixed-window counters, in the database rather than in memory because
+/// serverless functions do not share memory — an in-process limiter would reset
+/// on every cold start and count separately per instance, which is no limit.
+model RateLimit {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+
+  @@index([expiresAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -195,12 +237,12 @@ model Task {
 /// you to the desktop app, the phone app, or the browser — whichever fits.
 /// kind: "source" | "draft" | "join" | "calendar" | "file" | "custom"
 model TaskLink {
-  id       String  @id @default(cuid())
-  taskId   String
-  kind     String  @default("source")
-  label    String
-  provider String?
-  webUrl   String?
+  id         String  @id @default(cuid())
+  taskId     String
+  kind       String  @default("source")
+  label      String
+  provider   String?
+  webUrl     String?
   desktopUrl String?
   mobileUrl  String?
   isPrimary  Boolean @default(false)
@@ -237,7 +279,7 @@ model Draft {
 /// this is what stops "you never replied to Bob" reappearing every morning.
 /// action: "completed" | "dismissed" | "delegated" | "snoozed" | "not_relevant"
 model Suppression {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
   sourceKey String
   action    String
@@ -246,8 +288,8 @@ model Suppression {
   taskTitle String?
   /// Null = forever. Snoozes set this so the item can legitimately come back.
   expiresAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -310,18 +352,27 @@ model AgentRun {
 // Push
 // ---------------------------------------------------------------------------
 
+/// One device that can receive notifications, however it receives them.
+/// transport: "web" (VAPID web push) | "fcm" (Android native) | "apns" (iOS native)
 model PushDevice {
-  id        String   @id @default(cuid())
+  id        String @id @default(cuid())
   userId    String
-  endpoint  String   @unique
-  p256dh    String
-  auth      String
-  userAgent String?
-  platform  String? // ios | android | macos | windows | linux | unknown
-  label     String?
-  createdAt DateTime @default(now())
-  lastSeenAt DateTime @default(now())
-  failureCount Int    @default(0)
+  transport String @default("web")
+
+  /// Web push: the subscription endpoint and its keys.
+  endpoint String? @unique
+  p256dh   String?
+  auth     String?
+
+  /// Native push: the APNs or FCM registration token.
+  deviceToken String? @unique
+
+  userAgent    String?
+  platform     String? // ios | android | macos | windows | linux | unknown
+  label        String?
+  createdAt    DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+  failureCount Int      @default(0)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -329,16 +380,16 @@ model PushDevice {
 }
 
 model NotificationLog {
-  id     String  @id @default(cuid())
-  userId String
-  kind   String // digest | urgent | reminder | test | agent
-  title  String
-  body   String?
-  url    String?
-  taskId String?
+  id        String   @id @default(cuid())
+  userId    String
+  kind      String // digest | urgent | reminder | test | agent
+  title     String
+  body      String?
+  url       String?
+  taskId    String?
   /// How many devices accepted it.
-  delivered Int @default(0)
-  sentAt DateTime @default(now())
+  delivered Int      @default(0)
+  sentAt    DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

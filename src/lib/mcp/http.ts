@@ -2,6 +2,7 @@ import { prisma } from "../db";
 import { sha256 } from "../crypto";
 import type { Actor } from "../auth";
 import { handleMessage } from "./server";
+import { rateLimit, rateLimitHeaders } from "../rate-limit";
 import { ERROR_CODES, fail, LATEST_PROTOCOL_VERSION } from "./protocol";
 
 const JSON_HEADERS = {
@@ -86,6 +87,20 @@ function sseResponse(payload: unknown) {
 export async function handleMcpPost(req: Request, pathToken?: string): Promise<Response> {
   const actor = await resolveActor(req, pathToken);
   if (!actor) return unauthorized("Missing or invalid connection token.");
+
+  // Per token, not per IP: an assistant's requests come from its provider's
+  // egress addresses, which are shared by everybody using that assistant.
+  const limited = await rateLimit("mcp", actor.tokenId ?? actor.user.id);
+  if (!limited.ok) {
+    return new Response(
+      JSON.stringify(
+        fail(null, ERROR_CODES.INVALID_REQUEST, "Rate limit exceeded — slow down and retry.", {
+          retryAfterSeconds: limited.retryAfter,
+        }),
+      ),
+      { status: 429, headers: { ...JSON_HEADERS, ...rateLimitHeaders(limited) } },
+    );
+  }
 
   let body: unknown;
   try {

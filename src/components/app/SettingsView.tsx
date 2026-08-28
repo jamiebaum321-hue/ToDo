@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Bell, BellOff, Check, LogOut, Loader2, Send, Smartphone } from "lucide-react";
+import { Bell, BellOff, Check, Loader2, Send, Smartphone } from "lucide-react";
 import { api } from "@/lib/client/api";
 import { usePush } from "@/hooks/usePush";
 import { MobileHeader, PageShell } from "./Shell";
-import { Logo } from "@/components/Logo";
+import { AccountPanel } from "./AccountPanel";
 
 interface SettingsShape {
   rollingWindowDays: number;
@@ -38,7 +37,6 @@ export function SettingsView({
   user: { name: string | null; email: string };
   push: { configured: boolean; publicKey: string | null; devices: number };
 }) {
-  const router = useRouter();
   const [settings, setSettings] = useState(initial);
   const [saved, setSaved] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -263,33 +261,7 @@ export function SettingsView({
         />
       </Card>
 
-      {/* Account ---------------------------------------------------------- */}
-      <Card title="Account">
-        <div className="flex items-center gap-3">
-          <Logo size={44} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[15px] font-extrabold" style={{ color: "var(--text)" }}>
-              {user.name ?? user.email}
-            </p>
-            <p className="truncate text-[13px] font-semibold" style={{ color: "var(--text-3)" }}>
-              {user.email} · {settings.timezone}
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={async () => {
-            await api.logout();
-            router.replace("/login");
-            router.refresh();
-          }}
-          className="mt-4 inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-[14px] font-bold"
-          style={{ border: "1px solid var(--line)", color: "var(--accent-urgent)" }}
-        >
-          <LogOut className="size-4" strokeWidth={2.6} />
-          Sign out
-        </button>
-      </Card>
+      <AccountPanel user={{ ...user, timezone: settings.timezone }} />
     </PageShell>
   );
 }

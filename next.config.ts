@@ -46,6 +46,37 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "X-DNS-Prefetch-Control", value: "off" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), interest-cohort=()" },
+          {
+            // Two years, preloadable. Only meaningful over HTTPS; browsers
+            // ignore it on plain HTTP, so it is safe to send unconditionally.
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
+          {
+            // The app ships no third-party scripts, so the policy can be tight.
+            // 'unsafe-inline' on styles is required by Next's inlined critical
+            // CSS; script-src keeps 'unsafe-inline' only for the pre-paint
+            // theme script, which must run before hydration to avoid a flash.
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "base-uri 'self'",
+              "object-src 'none'",
+              "frame-ancestors 'self'",
+              "form-action 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+              "font-src 'self' https://fonts.gstatic.com data:",
+              "img-src 'self' data: blob:",
+              // The native shells load the app from their own origin.
+              "connect-src 'self' https://fcm.googleapis.com capacitor://localhost http://localhost",
+              "manifest-src 'self'",
+              "worker-src 'self'",
+              "upgrade-insecure-requests",
+            ].join("; "),
+          },
         ],
       },
     ];

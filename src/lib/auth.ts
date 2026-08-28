@@ -18,11 +18,17 @@ export interface Actor {
 // Browser sessions
 // ---------------------------------------------------------------------------
 
-export async function createSession(userId: string, userAgent?: string | null) {
+export async function createSession(userId: string, userAgent?: string | null, ip?: string | null) {
   const token = randomToken(32);
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 864e5);
   await prisma.session.create({
-    data: { userId, tokenHash: sha256(token), expiresAt, userAgent: userAgent?.slice(0, 300) ?? null },
+    data: {
+      userId,
+      tokenHash: sha256(token),
+      expiresAt,
+      userAgent: userAgent?.slice(0, 300) ?? null,
+      ip: ip?.slice(0, 64) ?? null,
+    },
   });
 
   const jar = await cookies();
@@ -56,7 +62,30 @@ export async function getSessionUser(): Promise<User | null> {
     include: { user: true },
   });
   if (!session || session.expiresAt < new Date()) return null;
+
+  // A password change or reset retires every session opened before it, so
+  // stealing a cookie does not survive the owner locking the account down.
+  if (session.createdAt < session.user.credentialsChangedAt) {
+    await prisma.session.delete({ where: { id: session.id } }).catch(() => {});
+    return null;
+  }
+
+  // Throttled, so the session list stays useful without a write per request.
+  if (Date.now() - session.lastSeenAt.getTime() > 300_000) {
+    prisma.session.update({ where: { id: session.id }, data: { lastSeenAt: new Date() } }).catch(() => {});
+  }
+
   return session.user;
+}
+
+/**
+ * Cut every session loose. Called on password reset and on password change —
+ * the whole point of both is to lock out whoever else might be signed in.
+ */
+export async function revokeAllSessions(userId: string, keepTokenHash?: string) {
+  await prisma.session.deleteMany({
+    where: { userId, ...(keepTokenHash ? { NOT: { tokenHash: keepTokenHash } } : {}) },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +138,41 @@ export async function getActor(req: Request): Promise<Actor | null> {
 
 export function hasScope(actor: Actor, scope: string): boolean {
   return actor.scopes.includes(scope) || actor.scopes.includes("admin");
+}
+
+// ---------------------------------------------------------------------------
+// Password policy
+// ---------------------------------------------------------------------------
+
+/** Rejected outright — the passwords every credential-stuffing list opens with. */
+const COMMON = new Set([
+  "password", "password1", "password123", "12345678", "123456789", "1234567890",
+  "qwerty123", "qwertyuiop", "letmein1", "welcome1", "iloveyou", "admin123",
+  "todo1234", "changeme", "passw0rd", "football", "baseball", "sunshine",
+  "princess", "trustno1", "abc12345", "monkey123",
+]);
+
+/**
+ * Length first, because it does more work than any character-class rule. The
+ * checks after it target the two ways a long password is still trivially
+ * guessable: it is a known password, or it is one character repeated.
+ */
+export function checkPassword(password: string, email?: string): { ok: true } | { ok: false; reason: string } {
+  const value = password.normalize("NFKC");
+
+  if (value.length < 10) return { ok: false, reason: "Use at least 10 characters. Length beats punctuation." };
+  if (value.length > 200) return { ok: false, reason: "That is longer than 200 characters." };
+  if (COMMON.has(value.toLowerCase())) return { ok: false, reason: "That password appears on every breach list. Pick another." };
+  if (/^(.)\1+$/.test(value)) return { ok: false, reason: "That is one character repeated." };
+
+  if (email) {
+    const local = email.split("@")[0]?.toLowerCase();
+    if (local && local.length > 2 && value.toLowerCase().includes(local)) {
+      return { ok: false, reason: "Do not put your email address in your password." };
+    }
+  }
+
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------

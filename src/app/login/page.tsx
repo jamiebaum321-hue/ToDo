@@ -10,11 +10,11 @@ export const metadata: Metadata = { title: "Sign in" };
 
 export default async function LoginPage() {
   if (await getSessionUser()) redirect("/");
-  const isFirstRun = (await prisma.user.count()) === 0;
 
+  const count = await prisma.user.count();
   return (
     <Suspense>
-      <LoginForm firstRun={isFirstRun} />
+      <LoginForm firstRun={count === 0} signupsOpen={process.env.ALLOW_SIGNUPS !== "false"} />
     </Suspense>
   );
 }

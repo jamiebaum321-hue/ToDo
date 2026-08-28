@@ -3,6 +3,9 @@ import { json } from "@/lib/api";
 import { safeEqual } from "@/lib/crypto";
 import { archiveOldCompleted, wakeSnoozedTasks } from "@/lib/actions";
 import { pruneExpiredSuppressions } from "@/lib/suppression";
+import { pruneRateLimits } from "@/lib/rate-limit";
+import { pruneVerificationTokens } from "@/lib/verification";
+import { prisma as db } from "@/lib/db";
 import { sendDigest, sendPushToUser } from "@/lib/push";
 import { crossedLocalTime, relativeLabel } from "@/lib/time";
 
@@ -58,6 +61,10 @@ async function runTick(req: Request) {
 
   const woken = await wakeSnoozedTasks();
   const pruned = await pruneExpiredSuppressions();
+  // Housekeeping for the tables nothing else cleans up.
+  const rateLimitsPruned = await pruneRateLimits();
+  const tokensPruned = await pruneVerificationTokens();
+  const sessionsPruned = (await db.session.deleteMany({ where: { expiresAt: { lt: now } } })).count;
 
   const users = await prisma.user.findMany({ include: { settings: true } });
   const digests: { email: string; sent: number; skipped: string | null }[] = [];
@@ -124,6 +131,9 @@ async function runTick(req: Request) {
     at: now.toISOString(),
     snoozedWoken: woken,
     suppressionsPruned: pruned,
+    rateLimitsPruned,
+    verificationTokensPruned: tokensPruned,
+    sessionsPruned,
     archived,
     digests,
     reminders,

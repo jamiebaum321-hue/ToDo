@@ -2,11 +2,18 @@ import webpush from "web-push";
 import { prisma } from "./db";
 import { getSettings } from "./settings";
 import { isQuietHours } from "./time";
+import { fcmConfigured, sendFcm } from "./push-fcm";
 
 let configured = false;
 
-export function pushConfigured(): boolean {
+/** Web push, for browsers and installed PWAs. */
+export function webPushConfigured(): boolean {
   return Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
+}
+
+/** Either transport being available is enough to notify somebody. */
+export function pushConfigured(): boolean {
+  return webPushConfigured() || fcmConfigured();
 }
 
 export function publicVapidKey(): string | null {
@@ -14,7 +21,7 @@ export function publicVapidKey(): string | null {
 }
 
 function configure() {
-  if (configured || !pushConfigured()) return;
+  if (configured || !webPushConfigured()) return;
   webpush.setVapidDetails(
     process.env.VAPID_SUBJECT || "mailto:notifications@todo.app",
     process.env.VAPID_PUBLIC_KEY!,
@@ -84,10 +91,44 @@ export async function sendPushToUser(
 
   let sent = 0;
   let failed = 0;
+  /** Endpoints and tokens the provider told us are dead. */
   const dead: string[] = [];
 
   await Promise.all(
     devices.map(async (device) => {
+      // --- native (iOS and Android apps, both over FCM) --------------------
+      if (device.transport !== "web") {
+        if (!device.deviceToken) return;
+        const result = await sendFcm(device.deviceToken, {
+          title: payload.title,
+          body: payload.body ?? "",
+          url: payload.url ?? "/",
+          taskId: payload.taskId ?? null,
+          tag: payload.tag ?? payload.kind ?? "todo",
+          badge: payload.badge ?? null,
+          urgent: payload.urgent,
+        });
+
+        if (result.ok) {
+          sent += 1;
+          await prisma.pushDevice
+            .update({ where: { id: device.id }, data: { lastSeenAt: new Date(), failureCount: 0 } })
+            .catch(() => {});
+        } else {
+          failed += 1;
+          if (result.gone) dead.push(device.id);
+          else
+            await prisma.pushDevice
+              .update({ where: { id: device.id }, data: { failureCount: { increment: 1 } } })
+              .catch(() => {});
+        }
+        return;
+      }
+
+      // --- web push (browsers and installed PWAs) --------------------------
+      if (!device.endpoint || !device.p256dh || !device.auth) return;
+      if (!webPushConfigured()) return;
+
       try {
         await webpush.sendNotification(
           { endpoint: device.endpoint, keys: { p256dh: device.p256dh, auth: device.auth } },
