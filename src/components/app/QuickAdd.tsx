@@ -94,7 +94,7 @@ export function QuickAdd({ open, onClose }: { open: boolean; onClose: () => void
                   border: `1.5px solid ${active ? vars.accent : "var(--line)"}`,
                 }}
               >
-                {b.short}
+                {b.label}
               </button>
             );
           })}

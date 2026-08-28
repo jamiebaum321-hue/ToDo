@@ -7,6 +7,8 @@ import { api } from "@/lib/client/api";
 import { usePush } from "@/hooks/usePush";
 import { MobileHeader, PageShell } from "./Shell";
 import { AccountPanel } from "./AccountPanel";
+import { TeamPanel } from "./TeamPanel";
+import type { TeamMemberDTO } from "@/lib/team";
 
 interface SettingsShape {
   rollingWindowDays: number;
@@ -31,11 +33,13 @@ export function SettingsView({
   counts,
   initial,
   user,
+  team,
   push,
 }: {
   counts: Record<string, number>;
   initial: SettingsShape;
   user: { name: string | null; email: string };
+  team: TeamMemberDTO[];
   push: { configured: boolean; publicKey: string | null; devices: number };
 }) {
   const [settings, setSettings] = useState(initial);
@@ -213,6 +217,8 @@ export function SettingsView({
           onChange={(v) => save({ showReasons: v })}
         />
       </Card>
+
+      <TeamPanel initial={team} />
 
       {/* Opening links --------------------------------------------------- */}
       <Card title="Opening things" blurb="Where the “Open in Outlook” buttons take you.">

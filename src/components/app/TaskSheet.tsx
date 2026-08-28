@@ -19,6 +19,7 @@ import { cn, displayName } from "@/lib/utils";
 import { bucketVars, BUCKET_ICON, PROVIDER_ICON } from "./icons";
 import { OpenButton } from "./OpenButton";
 import { BUCKETS } from "@/lib/buckets";
+import type { TeamMemberDTO } from "@/lib/team";
 
 interface Props {
   task: TaskDTO;
@@ -27,6 +28,7 @@ interface Props {
   onComplete: (task: TaskDTO) => void;
   onSnooze: (task: TaskDTO, until: Date) => void;
   onDelegate: (task: TaskDTO, to: string | null) => void;
+  team: TeamMemberDTO[];
   onMove: (task: TaskDTO, bucket: string) => void;
   onPin: (task: TaskDTO) => void;
   onDelete: (task: TaskDTO) => void;
@@ -46,6 +48,7 @@ export function TaskSheet({
   onComplete,
   onSnooze,
   onDelegate,
+  team,
   onMove,
   onPin,
   onDelete,
@@ -101,7 +104,7 @@ export function TaskSheet({
             style={{ background: vars.tint, color: vars.accent }}
           >
             <BucketIcon className="size-[13px]" strokeWidth={2.8} />
-            {BUCKETS.find((b) => b.key === task.bucket)?.short ?? "Task"}
+            {BUCKETS.find((b) => b.key === task.bucket)?.label ?? "Task"}
           </span>
           <div className="flex-1" />
           <button
@@ -295,6 +298,27 @@ export function TaskSheet({
 
           {menu === "delegate" ? (
             <MenuCard title="Hand it to">
+              {/* Your team first — typing a name you already listed is busywork,
+                  and a name that matches the roster is one the agent knows. */}
+              {team.length > 0 ? (
+                <div className="mb-2 flex flex-wrap gap-1.5 px-1">
+                  {team.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        onDelegate(task, m.name);
+                        setMenu("none");
+                      }}
+                      className="rounded-full px-3 py-1.5 text-[13px] font-bold transition active:scale-95"
+                      style={{ background: "var(--tint-delegate)", color: "var(--accent-delegate)" }}
+                    >
+                      {m.name}
+                      <span className="ml-1.5 font-semibold opacity-70">{m.functionLabel}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <form
                 onSubmit={(e) => {
                   e.preventDefault();

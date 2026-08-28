@@ -1,6 +1,7 @@
 import { prisma } from "../db";
 import { BUCKETS, normalizeBucket } from "../buckets";
 import { getSettings } from "../settings";
+import { describeTeamForAgent, listTeam } from "../team";
 import { activeSuppressions, clearSuppression, SUPPRESSION_REASON } from "../suppression";
 import { serializeTaskForAgent, stringifyTags, taskInclude } from "../tasks";
 import { syncTasks } from "../sync";
@@ -149,6 +150,7 @@ export const TOOLS: ToolDefinition[] = [
     handler: async (args, actor) => {
       const userId = actor.user.id;
       const settings = await getSettings(userId);
+      const team = await listTeam(userId);
       const since = args?.handledSince ? new Date(args.handledSince) : undefined;
       const suppressions = await activeSuppressions(userId, {
         since: since && !Number.isNaN(since.getTime()) ? since : undefined,
@@ -184,6 +186,23 @@ export const TOOLS: ToolDefinition[] = [
             to: new Date(now.getTime() + windowDays * 864e5).toISOString(),
           },
           buckets: BUCKETS.map((b) => ({ key: b.key, label: b.label, meaning: b.blurb })),
+          // Repeated here on purpose. The same rules go out as the server's
+          // instructions when the connection is made, but clients read those
+          // once — a setting changed since then only reaches the agent through
+          // this call, so this is the copy to trust.
+          houseRules: {
+            rollingWindowDays: windowDays,
+            writeDrafts: settings.requestDrafts,
+            writeDraftsMeaning: settings.requestDrafts
+              ? "Write the obvious replies, save them to the user's drafts, and pass them in `draft` — whether or not this run's prompt mentioned drafts."
+              : "Do not write draft replies; the user has turned that off.",
+            explainBucketChoices: settings.showReasons,
+            digestTime: settings.digestTime,
+          },
+          team: {
+            members: team,
+            guidance: describeTeamForAgent(team),
+          },
           preferences: {
             writeDrafts: settings.requestDrafts,
             showReasons: settings.showReasons,
@@ -210,7 +229,7 @@ export const TOOLS: ToolDefinition[] = [
               }
             : null,
           guidance:
-            "Build the full list for the window, then send it in ONE sync_tasks call with replace='window'. Anything you leave out is cleared. Anything in alreadyHandled will be refused and reported back to you.",
+            "Build the full list for the window, then send it in ONE sync_tasks call with replace='window'. Anything you leave out is cleared. Anything in alreadyHandled will be refused and reported back to you — do not re-raise those just because the original email is still sitting in the mailbox; only something genuinely new on the same item (a fresh reply, a moved deadline) justifies a new task, and a message you have already seen is not new evidence. Follow `houseRules` even where this run's prompt says nothing about them.",
         },
       );
     },

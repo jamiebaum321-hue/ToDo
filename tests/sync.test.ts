@@ -181,6 +181,69 @@ describe("the feedback loop", () => {
     expect(r.skipped).toBe(0);
   });
 
+  /**
+   * The scenario the whole app exists for: a 30-day window means every sweep
+   * sees the same email again, so "I already did this" has to survive being
+   * re-read for the rest of the month — without also muting the thread if
+   * something genuinely new lands on it.
+   */
+  it("stays cleared for every sweep in the window, not just the next one", async () => {
+    const proposal: TaskInputRaw = {
+      title: "Submit the $25k proposal",
+      bucket: "urgent_important",
+      source: { provider: "gmail", type: "email", externalId: "msg-proposal-1", threadId: "thread-proposal" },
+    };
+
+    await sync([proposal]);
+    const task = await prisma.task.findFirstOrThrow({ where: { userId } });
+    await completeTask(userId, task.id);
+
+    // Thirty more mornings. The email has not moved; neither has the answer.
+    for (let day = 0; day < 30; day += 1) {
+      const r = await sync([proposal], { replace: "none" });
+      expect(r.created, `day ${day}`).toBe(0);
+      expect(r.skipped, `day ${day}`).toBe(1);
+    }
+
+    expect(await prisma.task.count({ where: { userId, status: "open" } })).toBe(0);
+  });
+
+  it("still lets a genuinely new message on the same thread through", async () => {
+    const first: TaskInputRaw = {
+      title: "Submit the $25k proposal",
+      bucket: "urgent_important",
+      source: { provider: "gmail", type: "email", externalId: "msg-proposal-1", threadId: "thread-proposal" },
+    };
+    await sync([first]);
+    await completeTask(userId, (await prisma.task.findFirstOrThrow({ where: { userId } })).id);
+
+    // They wrote back. Different message, so a different key, so it is not the
+    // thing that was cleared — suppression is per item, not per conversation.
+    const reply: TaskInputRaw = {
+      title: "Bob came back on the proposal with questions",
+      bucket: "urgent_important",
+      source: { provider: "gmail", type: "email", externalId: "msg-proposal-2", threadId: "thread-proposal" },
+    };
+    const r = await sync([reply], { replace: "none" });
+    expect(r.created).toBe(1);
+    expect(r.skipped).toBe(0);
+  });
+
+  it("tells the agent what it refused and why, so it can stop sending it", async () => {
+    const proposal: TaskInputRaw = {
+      title: "Submit the $25k proposal",
+      bucket: "urgent_important",
+      source: { provider: "gmail", type: "email", externalId: "msg-proposal-1" },
+    };
+    await sync([proposal]);
+    await completeTask(userId, (await prisma.task.findFirstOrThrow({ where: { userId } })).id);
+
+    const r = await sync([proposal], { replace: "none" });
+    expect(r.skippedTasks[0].title).toBe("Submit the $25k proposal");
+    expect(r.skippedTasks[0].sourceKey).toContain("msg-proposal-1");
+    expect(r.message).toContain("already handled");
+  });
+
   it("honours force when the user explicitly asks for it back", async () => {
     await sync([bobEmail]);
     const task = await prisma.task.findFirstOrThrow({ where: { userId } });

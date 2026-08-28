@@ -1,3 +1,4 @@
+import type { TeamMemberDTO } from "../team";
 import type { TaskDTO } from "@/lib/tasks";
 
 export type { TaskDTO } from "@/lib/tasks";
@@ -35,6 +36,8 @@ export interface BoardPayload {
   lastRun: LastRun | null;
   /** Live connection tokens, OAuth ones included. Zero means nothing is wired up. */
   connections: number;
+  /** Who work can be handed to. Drives the delegate picker. */
+  team: TeamMemberDTO[];
 }
 
 export type TaskAction = "complete" | "reopen" | "dismiss" | "snooze" | "delegate" | "pin" | "move";

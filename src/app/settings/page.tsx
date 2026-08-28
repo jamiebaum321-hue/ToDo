@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
 import { publicVapidKey, pushConfigured } from "@/lib/push";
+import { listTeam } from "@/lib/team";
 import { SettingsView } from "@/components/app/SettingsView";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ export default async function SettingsPage() {
     counts[row.bucket] = row._count;
   }
   const devices = await prisma.pushDevice.count({ where: { userId: user.id } });
+  const team = await listTeam(user.id);
 
   return (
     <SettingsView
@@ -42,6 +44,7 @@ export default async function SettingsPage() {
         timezone: user.timezone,
       }}
       user={{ name: user.name, email: user.email }}
+      team={team}
       push={{ configured: pushConfigured(), publicKey: publicVapidKey(), devices }}
     />
   );
