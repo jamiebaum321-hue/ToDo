@@ -9,13 +9,8 @@ out/
 build/
 next-env.d.ts.bak
 
-# production data
+# local data
 /data/
-*.db
-*.db-journal
-*.sqlite
-*.sqlite3
-prisma/dev.db*
 
 # env
 .env

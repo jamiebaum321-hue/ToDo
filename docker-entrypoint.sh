@@ -1,10 +1,9 @@
 #!/bin/sh
 set -e
 
-# Bring the schema up to date on every boot. `db push` is idempotent, so this is
-# safe to run repeatedly and means a fresh volume just works.
-echo "→ syncing database schema"
-npx prisma db push --skip-generate --accept-data-loss
+# Migrations are idempotent, so a fresh volume and an upgrade both just work.
+echo "→ applying database migrations"
+npx prisma migrate deploy
 
 if [ "${RUN_WORKER:-true}" = "true" ]; then
   echo "→ starting the scheduler"

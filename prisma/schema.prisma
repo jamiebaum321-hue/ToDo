@@ -1,12 +1,18 @@
 // ToDo — agent-filled task inbox
 // ---------------------------------------------------------------------------
-// Default provider is SQLite so the app runs with zero infrastructure.
-// To deploy on a serverless host (Vercel, etc.) switch to Postgres:
-//     npm run db:use-postgres      (or edit `provider` below to "postgresql")
-//     export DATABASE_URL="postgresql://..."
-//     npx prisma migrate deploy
-// Every model below is written to be provider-agnostic: no enums and no Json
-// columns, both of which behave differently across SQLite and Postgres.
+// PostgreSQL, because the app runs on Vercel and serverless functions have no
+// disk to keep a SQLite file on.
+//
+//   DATABASE_URL  pooled connection, used at runtime. Serverless opens a lot of
+//                 short-lived connections, so this must go through the pooler
+//                 (Neon's -pooler host, or PgBouncer) or Postgres runs out of
+//                 slots under any real traffic.
+//   DIRECT_URL    unpooled connection, used only by `prisma migrate`. Migrations
+//                 need session-level statements a transaction pooler will not
+//                 pass through.
+//
+// The models below use no enums and no Json columns, so the schema stays
+// portable to any Postgres and readable as plain SQL.
 // ---------------------------------------------------------------------------
 
 generator client {
@@ -14,8 +20,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------------------------------------------------------------------------
@@ -151,7 +158,8 @@ model Task {
   /// Why the agent filed it here. Shown under the title when enabled.
   reason     String?
   confidence Float?  @default(0.8)
-  /// JSON array of strings, serialised. SQLite has no array type.
+  /// JSON array of strings, serialised as text so the column reads the same
+  /// way from SQL as it does from the app.
   tags       String  @default("[]")
 
   dueAt           DateTime?

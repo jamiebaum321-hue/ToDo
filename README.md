@@ -97,13 +97,16 @@ npm install
 cp .env.example .env
 npm run gen:vapid          # optional, but push needs it — paste the keys into .env
 
-npm run setup              # creates the database and seeds a sample list
+docker compose up -d db    # PostgreSQL on :5432 (or point DATABASE_URL anywhere)
+npm run setup              # applies migrations and seeds a sample list
 npm run dev
 ```
 
 Open <http://localhost:3000>. The seed signs you in with `you@example.com` / `todo1234` — change both in `.env` before seeding if you would rather not.
 
-Starting empty instead? Skip `npm run setup`, run `npm run db:push`, and the first visit walks you through creating your account. **Registration closes after the first account**, so nobody else can claim your instance. Set `ALLOW_SIGNUPS=true` to keep it open.
+Starting empty instead? Skip `npm run setup`, run `npm run db:deploy`, and the first visit walks you through creating your account. **Registration closes after the first account**, so nobody else can claim your instance. Set `ALLOW_SIGNUPS=true` to keep it open.
+
+You need a Postgres for the tests too — `npm test` wipes and rebuilds whatever `TEST_DATABASE_URL` points at, which the compose file above already provides.
 
 ## Connecting your assistant
 
@@ -212,24 +215,28 @@ Gmail's most durable link is built from the RFC-822 `Message-ID` — it survives
 
 ## Deploying
 
-**Docker** (SQLite on a volume, scheduler included)
+**Vercel + Neon** — the deployment this is built for. Add a Postgres store to the project (Storage → Create → Neon), which injects the connection strings, then set:
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | the **pooled** connection string (the `-pooler` host) |
+| `DIRECT_URL` | the **unpooled** connection string — migrations need it |
+| `NEXT_PUBLIC_APP_URL` | your deployment URL |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_SUBJECT` | from `npm run gen:vapid` |
+| `CRON_SECRET` | any long random string |
+
+`npm run build` runs `prisma migrate deploy` before `next build`, so each deploy brings the database up to date on its own. `vercel.json` registers the 15-minute cron.
+
+Pooling matters here: a serverless function opens a new connection per invocation, so pointing `DATABASE_URL` at the direct host will exhaust Postgres under any real traffic.
+
+**Docker** (Postgres and the scheduler, all in compose)
 
 ```bash
 cp .env.example .env      # fill in the VAPID keys
 docker compose up -d --build
 ```
 
-**Vercel** — needs Postgres, since serverless has no disk:
-
-```bash
-npm run db:use-postgres
-export DATABASE_URL="postgresql://…"
-npx prisma migrate dev --name init
-```
-
-Then set `DATABASE_URL`, the three VAPID variables, `NEXT_PUBLIC_APP_URL` and `CRON_SECRET` in the project. `vercel.json` already registers the 15-minute cron.
-
-**A VPS or anywhere with a disk** — SQLite is genuinely fine for this. `npm run build && npm start`, plus `npm run worker` alongside it for the digests.
+**A VPS** — `npm run build && npm start` against any Postgres, plus `npm run worker` alongside it for the digests.
 
 ### Scheduled housekeeping
 
@@ -280,18 +287,22 @@ src/
     actions.ts             complete / snooze / delegate / undo
     mcp/                   protocol, tools, prompts, transport
   components/app/          the UI
-prisma/schema.prisma       provider-agnostic: no enums, no Json columns
-tests/                     98 tests, including a real SQLite integration suite
+prisma/schema.prisma       PostgreSQL; no enums or Json columns, so it reads as plain SQL
+prisma/migrations/         checked-in SQL, applied by `prisma migrate deploy`
+tests/                     98 tests, including a real Postgres integration suite
 ```
 
 ### Commands
 
 ```bash
 npm run dev            # development server
-npm run setup          # database + seed
-npm test               # 98 tests
+npm run setup          # migrate + seed
+npm test               # 98 tests, against a real Postgres
 npm run typecheck      # tsc --noEmit
-npm run build          # production build
+npm run build          # migrate + production build
+npm run build:no-migrate  # build only, for CI and Docker images
+npm run db:migrate     # create a migration from a schema change
+npm run db:deploy      # apply pending migrations
 npm run worker         # standalone scheduler
 npm run gen:vapid      # mint push keys
 npm run gen:icons      # rebuild every brand asset from assets/logo-source.png
@@ -304,6 +315,7 @@ npm run gen:icons      # rebuild every brand asset from assets/logo-source.png
 - Registration closes after the first account unless `ALLOW_SIGNUPS=true`.
 - `/api/cron/tick` is open in development and requires `CRON_SECRET` in production; without the secret set, it returns 503 rather than running unauthenticated.
 - The service worker never caches `/api/*`, so nobody else's session can pick up your list from a shared browser.
+- `DATABASE_URL` and `DIRECT_URL` are the only database secrets; neither is exposed to the browser (nothing prefixed `NEXT_PUBLIC_` touches them).
 
 ## Licence
 

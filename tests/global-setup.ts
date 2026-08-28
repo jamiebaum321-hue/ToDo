@@ -1,21 +1,23 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync } from "node:fs";
-import { dirname } from "node:path";
-import { TEST_DB_FILE, TEST_DB_URL } from "./db-path";
+import { TEST_DB_URL } from "./db-path";
 
 /**
- * Integration tests run against a real SQLite file rather than a mock, because
- * the parts worth testing here — the unique constraint on (userId, sourceKey),
- * cascading deletes, the replace-the-window query — are database behaviour.
+ * Reset the test database to the current schema before the suite runs.
+ *
+ * `db push --force-reset` drops and recreates everything, so each run starts
+ * from a known-empty database no matter how the last one ended.
  */
 export default function setup() {
-  rmSync(TEST_DB_FILE, { force: true });
-  rmSync(`${TEST_DB_FILE}-journal`, { force: true });
-  mkdirSync(dirname(TEST_DB_FILE), { recursive: true });
-
-  // No --force-reset: the file was just deleted, so `db push` creates it clean.
-  execFileSync("npx", ["prisma", "db", "push", "--skip-generate"], {
-    env: { ...process.env, DATABASE_URL: TEST_DB_URL },
-    stdio: "pipe",
-  });
+  try {
+    execFileSync("npx", ["prisma", "db", "push", "--skip-generate", "--accept-data-loss"], {
+      env: { ...process.env, DATABASE_URL: TEST_DB_URL, DIRECT_URL: TEST_DB_URL },
+      stdio: "pipe",
+    });
+  } catch (err: any) {
+    const detail = err?.stderr?.toString() ?? err?.stdout?.toString() ?? String(err);
+    throw new Error(
+      `Could not reach the test database at ${TEST_DB_URL.replace(/:[^:@/]*@/, ":***@")}.\n` +
+        `Start one with \`docker compose up -d db\`, or set TEST_DATABASE_URL.\n\n${detail}`,
+    );
+  }
 }

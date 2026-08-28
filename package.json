@@ -5,22 +5,22 @@
   "description": "ToDo \u2014 an agent-filled task inbox. Your Claude or ChatGPT subscription connects over MCP, triages every connector into four buckets, and this app makes each task one tap away from done.",
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && prisma migrate deploy && next build",
     "start": "next start -p 3000",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
-    "setup": "prisma generate && prisma db push && tsx prisma/seed.ts",
+    "setup": "prisma generate && prisma migrate deploy && tsx prisma/seed.ts",
     "gen:icons": "tsx scripts/generate-icons.ts",
     "gen:vapid": "tsx scripts/generate-vapid.ts",
     "postinstall": "prisma generate",
     "worker": "tsx scripts/worker.ts",
-    "db:use-postgres": "tsx scripts/use-postgres.ts"
+    "build:no-migrate": "prisma generate && next build",
+    "db:deploy": "prisma migrate deploy"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

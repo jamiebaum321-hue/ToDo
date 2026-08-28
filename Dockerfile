@@ -18,9 +18,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-# A build-time value only; the running container uses the real DATABASE_URL.
-ENV DATABASE_URL="file:../data/todo.db"
-RUN npm run build
+# `next build` needs a DATABASE_URL to satisfy Prisma's validation, but never
+# connects; migrations run at container start against the real database.
+ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
+ENV DIRECT_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
+RUN npm run build:no-migrate
 
 # ---- run -------------------------------------------------------------------
 FROM node:22-slim AS runner
@@ -31,7 +33,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
-ENV DATABASE_URL="file:../data/todo.db"
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/.next ./.next
@@ -43,10 +44,6 @@ COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/tsconfig.json ./tsconfig.json
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
-
-# The SQLite file lives here so a volume mount survives redeploys.
-RUN mkdir -p /app/data
-VOLUME ["/app/data"]
 
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \

@@ -8,10 +8,11 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     globals: true,
     globalSetup: ["./tests/global-setup.ts"],
-    // A single worker: every test shares one SQLite file, and parallel writes
-    // to it would trip over each other rather than reveal anything real.
+    // A single worker: every test file shares one database and truncates
+    // between cases, so running them in parallel would have them delete each
+    // other's fixtures rather than reveal anything real.
     fileParallelism: false,
-    env: { DATABASE_URL: TEST_DB_URL },
+    env: { DATABASE_URL: TEST_DB_URL, DIRECT_URL: TEST_DB_URL },
   },
   resolve: {
     alias: { "@": resolve(__dirname, "./src") },

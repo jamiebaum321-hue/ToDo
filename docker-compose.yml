@@ -1,13 +1,34 @@
 services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: todo
+      POSTGRES_PASSWORD: todo
+      POSTGRES_DB: todo
+    ports:
+      # Exposed so `npm run dev` and the tests on the host can reach it.
+      - "5432:5432"
+    volumes:
+      - todo-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U todo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   todo:
     build: .
     image: todo-mcp
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "3000:3000"
     environment:
-      # SQLite paths are relative to prisma/, so this lands in /app/data.
-      DATABASE_URL: "file:../data/todo.db"
+      DATABASE_URL: "postgresql://todo:todo@db:5432/todo"
+      DIRECT_URL: "postgresql://todo:todo@db:5432/todo"
       NEXT_PUBLIC_APP_URL: "${NEXT_PUBLIC_APP_URL:-http://localhost:3000}"
       # Generate with `npm run gen:vapid` and put them in a .env next to this file.
       VAPID_PUBLIC_KEY: "${VAPID_PUBLIC_KEY:-}"
@@ -18,8 +39,6 @@ services:
       ALLOW_SIGNUPS: "${ALLOW_SIGNUPS:-false}"
       # The container runs its own scheduler, so no external cron is needed.
       RUN_WORKER: "true"
-    volumes:
-      - todo-data:/app/data
 
 volumes:
-  todo-data:
+  todo-db:
