@@ -3,6 +3,7 @@ import { prisma } from "./db";
 import { normalizeBucket } from "./buckets";
 import { normalizeProvider } from "./providers";
 import { deriveLinkTarget, defaultLabel, hasAnyUrl } from "./deeplinks";
+import { listTeam, resolveDelegate, type TeamMemberDTO } from "./team";
 import { SUPPRESSION_REASON, suppressionMap } from "./suppression";
 import { stringifyTags } from "./tasks";
 import { deriveSourceKey, type SyncInput, type TaskInput } from "./validation";
@@ -26,6 +27,12 @@ export interface SyncResult {
   /** The whole point: what the app refused to recreate, and why. */
   skippedTasks: SyncSkipped[];
   removedTasks: { id: string; title: string; bucket: string }[];
+  /**
+   * Tasks handed to somebody who is not on the roster any more. Reported rather
+   * than rejected — the name may be a real person outside the team, and losing
+   * a genuine task over a stale name would be the worse failure.
+   */
+  unknownDelegates: { title: string; delegateTo: string }[];
   createdTasks: { id: string; title: string; bucket: string }[];
   counts: Record<string, number>;
   message: string;
@@ -130,7 +137,7 @@ function buildDraftRow(input: TaskInput): Prisma.DraftCreateWithoutTaskInput | n
   };
 }
 
-function taskFields(input: TaskInput, runId: string | null) {
+function taskFields(input: TaskInput, runId: string | null, team: TeamMemberDTO[] = []) {
   const source = input.source;
   return {
     title: input.title,
@@ -141,7 +148,9 @@ function taskFields(input: TaskInput, runId: string | null) {
     tags: stringifyTags(input.tags ?? []),
     dueAt: input.dueAt ?? null,
     estimateMinutes: input.estimateMinutes ?? null,
-    delegateTo: input.delegateTo ?? null,
+    // "julie" and "julie@company.com" both mean Julie Alvarez; store the name
+    // she is actually listed under so the app and the agent agree.
+    delegateTo: input.delegateTo ? (resolveDelegate(input.delegateTo, team)?.name ?? input.delegateTo) : null,
     sourceProvider: normalizeProvider(source?.provider),
     sourceType: source?.type ?? null,
     sourceExternalId: source?.externalId ?? source?.messageId ?? null,
@@ -182,6 +191,10 @@ export async function syncTasks(
   const settings = await prisma.settings.findUnique({ where: { userId } });
   const windowDays = input.windowDays ?? settings?.rollingWindowDays ?? 14;
 
+  // Read fresh on every run, never from what the agent was told at connect
+  // time — hiring and leaving is exactly the thing that goes stale.
+  const team = await listTeam(userId);
+
   const suppressed: Awaited<ReturnType<typeof suppressionMap>> = input.force
     ? new Map()
     : await suppressionMap(userId);
@@ -212,6 +225,7 @@ export async function syncTasks(
     skipped: 0,
     skippedTasks: [],
     removedTasks: [],
+    unknownDelegates: [],
     createdTasks: [],
     counts: {},
     message: "",
@@ -239,7 +253,13 @@ export async function syncTasks(
       continue;
     }
 
-    const fields = taskFields(raw, runId);
+    const fields = taskFields(raw, runId, team);
+
+    // The instructions the assistant is holding were written when it connected,
+    // so a name on them can be someone who has since left.
+    if (raw.delegateTo && team.length > 0 && !resolveDelegate(raw.delegateTo, team)) {
+      result.unknownDelegates.push({ title: raw.title, delegateTo: raw.delegateTo });
+    }
     const links = buildLinkRows(raw);
     const draft = buildDraftRow(raw);
 
@@ -364,6 +384,14 @@ export async function syncTasks(
   ];
   if (result.skipped > 0) parts.push(`${result.skipped} skipped (already handled)`);
   result.message = parts.join(", ") + ".";
+
+  if (result.unknownDelegates.length > 0) {
+    const names = [...new Set(result.unknownDelegates.map((d) => d.delegateTo))];
+    result.message +=
+      ` ${result.unknownDelegates.length} task(s) were handed to someone not on the user's team (${names.join(", ")}).` +
+      ` The team is now: ${team.map((m) => m.name).join(", ") || "empty"}.` +
+      " Use those names, or leave delegateTo out.";
+  }
 
   if (run) {
     await prisma.agentRun.update({
