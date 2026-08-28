@@ -8,6 +8,8 @@ import { crossedLocalTime, relativeLabel } from "@/lib/time";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// A full sync_tasks call writes a whole list; the default 15s is not enough.
+export const maxDuration = 60;
 
 /**
  * The housekeeping tick. Call it every 15 minutes — from Vercel Cron, a systemd
