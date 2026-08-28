@@ -1,6 +1,7 @@
 import { prisma } from "../db";
 import { BUCKETS } from "../buckets";
 import { getSettings } from "../settings";
+import { describeTeamForAgent, listTeam } from "../team";
 import { activeSuppressions } from "../suppression";
 import { serializeTaskForAgent, taskInclude } from "../tasks";
 import type { Actor } from "../auth";
@@ -17,7 +18,63 @@ import {
   type JsonRpcResponse,
 } from "./protocol";
 
-const INSTRUCTIONS = `ToDo is the user's task inbox. You fill it; they clear it.
+/**
+ * What the connection tells the assistant about itself.
+ *
+ * These reach the model as the server's own instructions, ahead of whatever the
+ * user typed. That matters because the settings in this app are not settings
+ * the app can act on — ToDo never reads anybody's mailbox, the assistant does.
+ * "Write draft replies" is therefore not a switch the app can honour on its
+ * own; it is a standing instruction that has to travel to whoever is holding
+ * the connection. Same for the rolling window and the team roster.
+ *
+ * So the rules are built per user and sent at initialize, which is why a
+ * scheduled prompt that says nothing about drafts still produces them.
+ *
+ * One caveat worth knowing: clients read these once, when the connection is
+ * made. Changing a setting will not reach a session that is already open — so
+ * `get_run_context` repeats the same rules on every run, and that is the copy
+ * to trust.
+ */
+export async function buildInstructions(actor: Actor): Promise<string> {
+  const [settings, team] = await Promise.all([getSettings(actor.user.id), listTeam(actor.user.id)]);
+
+  const rules = [
+    `Cover a rolling ${settings.rollingWindowDays}-day window, backwards and forwards, on every run.`,
+    settings.requestDrafts
+      ? "Where a reply is obvious, WRITE IT and save it to the user's drafts, then pass the draft in `draft` — do this whether or not the prompt asked for drafts, they have turned it on here."
+      : "Do not write draft replies. The user has turned that off.",
+    settings.showReasons
+      ? "Give every task a one-line `reason` for the bucket you chose. The user reads them."
+      : "A `reason` is optional; the user has hidden them.",
+  ];
+
+  return [
+    "ToDo is the user's task inbox. You fill it; they clear it.",
+    "",
+    "On a scheduled run, always start with `get_run_context`, then send the whole list in one `sync_tasks` call with replace=\"window\".",
+    "",
+    "The single rule that matters: anything in `alreadyHandled` has been cleared by the user in the app and must never be raised again. You are looking at a rolling window, so yesterday's unanswered email is still sitting in the mailbox — but if the user marked it done, it is done, whatever the mailbox says. Raise it again only if something genuinely new has happened on it since: a fresh reply, a moved deadline. A message you already saw is not new evidence.",
+    "",
+    "## How this user has set it up",
+    "",
+    "These come from their settings and apply to every run, whatever the prompt says:",
+    "",
+    ...rules.map((r) => `- ${r}`),
+    "",
+    describeTeamForAgent(team),
+    "",
+    "## Links",
+    "",
+    "Every task should carry a `source` with the provider's own id and URL, so the app can put a button on the card that opens the exact email, message or meeting. That button is the whole point of the app, and a link that lands on a generic inbox is worse than no link at all:",
+    "",
+    "- **Gmail** — send `source.messageId` (the RFC-822 `Message-ID` header) whenever you can; it is the only Gmail link that always resolves. Failing that send `source.threadId`, because Gmail's deep link resolves a thread id and falls back to All Mail when handed a message id. Always send `source.account`.",
+    "- **Outlook / Graph** — the message id in `source.externalId`, `webLink` in `source.url`, and the mailbox in `source.account`.",
+    "- **Teams, Slack, Zoom** — the permalink in `source.url`; the app derives the app links from it.",
+  ].join("\n");
+}
+
+const FALLBACK_INSTRUCTIONS = `ToDo is the user's task inbox. You fill it; they clear it.
 
 On a scheduled run, always start with \`get_run_context\`, then send the whole list in one \`sync_tasks\` call with replace="window".
 
@@ -120,6 +177,9 @@ export async function handleRpc(req: JsonRpcRequest, actor: Actor): Promise<Json
     switch (req.method) {
       case "initialize": {
         const version = negotiateVersion(req.params?.protocolVersion);
+        // A failure here must not cost the user their connection, so the
+        // static text stands in if the settings lookup falls over.
+        const instructions = await buildInstructions(actor).catch(() => FALLBACK_INSTRUCTIONS);
         return ok(id, {
           protocolVersion: version,
           capabilities: {
@@ -129,7 +189,7 @@ export async function handleRpc(req: JsonRpcRequest, actor: Actor): Promise<Json
             logging: {},
           },
           serverInfo: SERVER_INFO,
-          instructions: INSTRUCTIONS,
+          instructions,
         });
       }
 

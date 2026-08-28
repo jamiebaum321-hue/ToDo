@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Plug, type LucideIcon } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { LogOut, Plug, type LucideIcon } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { Doodle, type DoodleName } from "@/components/Doodle";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,36 @@ function NavIcon({ item, size, active }: { item: NavItem; size: number; active: 
   if (item.doodle) return <Doodle name={item.doodle} size={size} />;
   const Icon = item.icon!;
   return <Icon style={{ width: size - 4, height: size - 4 }} strokeWidth={active ? 2.6 : 2.2} />;
+}
+
+/** Signing out was three clicks deep in Settings. It belongs where you can see it. */
+function SignOutButton() {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await fetch("/api/auth/logout", { method: "POST" });
+          // replace(), not push(): the back button should not land on a list
+          // that is no longer readable.
+          router.replace("/login");
+          router.refresh();
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] font-bold transition disabled:opacity-60"
+      style={{ color: "var(--text-3)" }}
+    >
+      <LogOut className="size-[17px]" strokeWidth={2.4} />
+      {busy ? "Signing out…" : "Sign out"}
+    </button>
+  );
 }
 
 function isActive(pathname: string, href: string) {
@@ -81,10 +112,11 @@ export function SideNav({ counts }: { counts?: Record<string, number> }) {
         })}
       </nav>
 
-      <div className="mt-auto px-2 pt-6">
-        <p className="text-[11.5px] font-semibold leading-relaxed" style={{ color: "var(--text-3)" }}>
+      <div className="mt-auto space-y-3 pt-6">
+        <p className="px-2 text-[11.5px] font-semibold leading-relaxed" style={{ color: "var(--text-3)" }}>
           Filled by your assistant over MCP. Clear something here and it stops coming back.
         </p>
+        <SignOutButton />
       </div>
     </aside>
   );

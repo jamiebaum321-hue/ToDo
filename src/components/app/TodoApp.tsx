@@ -131,7 +131,10 @@ function Board() {
                 tint={vars.tint}
                 icon={<Icon className="size-[13px]" strokeWidth={2.8} />}
               >
-                {b.short}
+                {/* The full label, the same words the columns and the sheet
+                    use. Two names for one bucket just makes people wonder
+                    whether they are looking at the same thing. */}
+                {b.label}
               </Chip>
             );
           })}
@@ -147,15 +150,7 @@ function Board() {
           <Search className="size-4" strokeWidth={2.6} />
         </button>
 
-        <button
-          type="button"
-          onClick={() => setView(view === "focus" ? "board" : "focus")}
-          aria-label={view === "focus" ? "Switch to the board" : "Switch to the list"}
-          className="hidden size-9 shrink-0 place-items-center rounded-xl transition active:scale-90 sm:grid"
-          style={{ border: "1px solid var(--line)", color: "var(--text-2)" }}
-        >
-          {view === "focus" ? <Columns3 className="size-4" strokeWidth={2.6} /> : <Rows3 className="size-4" strokeWidth={2.6} />}
-        </button>
+        <ViewToggle value={view} onChange={setView} />
       </div>
 
       {searching ? (
@@ -208,6 +203,7 @@ function Board() {
         <TaskSheet
           task={selected}
           linkPreference={settings?.linkPreference ?? "auto"}
+          team={board?.team ?? []}
           onClose={() => select(null)}
           onComplete={(t) => act(t, t.status === "open" ? "complete" : "reopen")}
           onSnooze={(t, until) => act(t, "snooze", { until: until.toISOString() })}
@@ -301,6 +297,50 @@ function LastRunStrip({
 }
 
 /** Before the first sync there is nothing to show, so show the way in instead. */
+/**
+ * List or board, said out loud.
+ *
+ * This used to be one unlabelled icon that swapped between two glyphs, which
+ * meant the board — the whole four-bucket pipeline — read as if it did not
+ * exist. Two named options, and the one you are on is obvious.
+ */
+function ViewToggle({ value, onChange }: { value: View; onChange: (v: View) => void }) {
+  const options: { key: View; label: string; icon: typeof Rows3 }[] = [
+    { key: "focus", label: "List", icon: Rows3 },
+    { key: "board", label: "Board", icon: Columns3 },
+  ];
+
+  return (
+    <div
+      className="hidden shrink-0 items-center gap-0.5 rounded-xl p-1 sm:flex"
+      style={{ background: "var(--bg-alt)", border: "1px solid var(--line)" }}
+      role="group"
+      aria-label="How to lay the list out"
+    >
+      {options.map((o) => {
+        const active = value === o.key;
+        return (
+          <button
+            key={o.key}
+            type="button"
+            onClick={() => onChange(o.key)}
+            aria-pressed={active}
+            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-bold transition"
+            style={{
+              background: active ? "var(--card)" : "transparent",
+              color: active ? "var(--text)" : "var(--text-3)",
+              boxShadow: active ? "var(--shadow-card)" : undefined,
+            }}
+          >
+            <o.icon className="size-[15px]" strokeWidth={2.6} />
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
  * Three genuinely different empty lists, and telling them apart matters: being
  * told to go and connect an assistant you connected a minute ago reads as the

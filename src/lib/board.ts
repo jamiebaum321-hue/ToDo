@@ -2,6 +2,7 @@ import type { User } from "@prisma/client";
 import { prisma } from "./db";
 import { BUCKETS } from "./buckets";
 import { getSettings } from "./settings";
+import { listTeam } from "./team";
 import { compareTasks, serializeTask, taskInclude } from "./tasks";
 import type { BoardPayload } from "./client/types";
 
@@ -42,8 +43,11 @@ export async function loadBoard(user: User, status: "open" | "all" = "all"): Pro
     },
   });
 
+  const team = await listTeam(user.id);
+
   return {
     tasks: dtos,
+    team,
     counts,
     buckets: BUCKETS.map((b) => ({ key: b.key, label: b.label, short: b.short, blurb: b.blurb, accent: b.accent })),
     settings: {
