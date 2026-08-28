@@ -37,7 +37,7 @@ And one risk worth naming before you spend that money:
 ### 1. Point the shells at your deployment
 
 ```bash
-export CAP_SERVER_URL="https://your-todo-domain.com"
+export CAP_SERVER_URL="https://tasks2do.app"
 export CAP_APP_ID="com.yourcompany.todo"     # must match both stores
 npx cap sync
 ```
@@ -79,7 +79,7 @@ not your local keystore — Google re-signs your upload, so a local fingerprint
 works in debug and then silently stops working in production.
 
 Then in Xcode: **Signing & Capabilities** → add **Associated Domains** →
-`applinks:your-todo-domain.com`, and add **Push Notifications** and
+`applinks:tasks2do.app`, and add **Push Notifications** and
 **Background Modes → Remote notifications**.
 
 ### 4. Build
