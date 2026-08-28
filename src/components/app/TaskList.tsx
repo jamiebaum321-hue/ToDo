@@ -5,6 +5,7 @@ import { Sparkles } from "lucide-react";
 import type { TaskDTO } from "@/lib/client/types";
 import { BUCKETS } from "@/lib/buckets";
 import { Logo } from "@/components/Logo";
+import { Doodle, type DoodleName } from "@/components/Doodle";
 import { TaskCard } from "./TaskCard";
 import { bucketVars, BUCKET_ICON } from "./icons";
 import { useTodo } from "@/hooks/useTodo";
@@ -61,13 +62,20 @@ export function TaskList({ tasks, showReason }: { tasks: TaskDTO[]; showReason: 
 export function EmptyState({
   title = "Nothing waiting on you",
   body = "When your assistant runs its sweep, whatever needs you will land here.",
+  doodle,
 }: {
   title?: string;
   body?: string;
+  /** A drawing that says something about *why* it is empty. Falls back to the mark. */
+  doodle?: DoodleName;
 }) {
   return (
     <div className="flex flex-col items-center px-6 py-16 text-center">
-      <Logo size={92} className="opacity-90" />
+      {doodle ? (
+        <Doodle name={doodle} size={84} style={{ color: "var(--text-3)" }} />
+      ) : (
+        <Logo size={92} className="opacity-90" />
+      )}
       <h3 className="mt-5 text-[19px] font-extrabold" style={{ color: "var(--text)" }}>
         {title}
       </h3>

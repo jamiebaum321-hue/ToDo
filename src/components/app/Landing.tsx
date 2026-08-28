@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { ArrowRight, Check } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { Doodle } from "@/components/Doodle";
 import { BUCKETS } from "@/lib/buckets";
 
 /** What a logged-out visitor sees. Explains the loop, then gets out of the way. */
@@ -36,44 +37,68 @@ export function Landing({ signupsOpen }: { signupsOpen: boolean }) {
       {/* --- hero --------------------------------------------------------- */}
       <section className="mx-auto max-w-[1080px] px-5 pb-4 pt-8 sm:pt-16">
         <div className="grid items-center gap-12 lg:grid-cols-[1.1fr_1fr]">
-          <div>
-            <p className="text-[13px] font-extrabold uppercase tracking-[0.18em]" style={{ color: "var(--text-3)" }}>
-              Agent-filled task inbox
-            </p>
-            <h1
-              className="mt-4 max-w-[14ch] text-[44px] font-extrabold leading-[0.98] tracking-tight sm:text-[60px]"
-              style={{ color: "var(--text)" }}
+          <div className="relative">
+            {/*
+              The mascot goes behind the headline rather than beside it. It is painted in --wash, a tone taken from the
+              background family rather than the ink family, so it cannot clash with the heading on colour by
+              construction: the near-black headline still clears 13:1 against the darkest line of the drawing, and the
+              body copy 8:1. It is sized and offset to read as a whole figure — cropping it mid-body just leaves
+              anonymous squiggles — and fades out at the feet so it settles into the page rather than stopping dead.
+            */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -top-6 -right-6 h-[300px] w-[282px] sm:-top-10 sm:h-[420px] sm:w-[395px] lg:-top-8 lg:-right-20 lg:h-[490px] lg:w-[461px]"
+              style={{
+                maskImage: "linear-gradient(to bottom, #000 0%, #000 72%, transparent 100%)",
+                WebkitMaskImage: "linear-gradient(to bottom, #000 0%, #000 72%, transparent 100%)",
+              }}
             >
-              Everything you owe someone.
-            </h1>
-            <p className="mt-6 max-w-[48ch] text-[17px] leading-relaxed sm:text-[19px]" style={{ color: "var(--text-2)" }}>
-              Your Claude or ChatGPT subscription already reads your mail, calendar and chat. Point it at ToDo and
-              every morning it sorts what actually needs you into four buckets — each one a single tap from done.
-            </p>
-
-            <div className="mt-8 flex flex-wrap gap-3">
-              {signupsOpen ? (
-                <Link
-                  href="/signup"
-                  className="inline-flex items-center gap-2 rounded-2xl px-6 py-3.5 text-[16px] font-extrabold transition active:scale-[0.98]"
-                  style={{ background: "var(--text)", color: "var(--bg)" }}
-                >
-                  Start free
-                  <ArrowRight className="size-[18px]" strokeWidth={3} />
-                </Link>
-              ) : null}
-              <Link
-                href="/login"
-                className="inline-flex items-center gap-2 rounded-2xl px-6 py-3.5 text-[16px] font-bold"
-                style={{ border: "1px solid var(--line-strong)", color: "var(--text)" }}
-              >
-                Sign in
-              </Link>
+              <Doodle name="mascot" style={{ width: "100%", height: "100%", color: "var(--wash)" }} />
             </div>
 
-            <p className="mt-4 text-[13px]" style={{ color: "var(--text-3)" }}>
-              Works with Claude and ChatGPT over MCP. No email credentials ever touch ToDo.
-            </p>
+            {/* Positioned too, so the copy paints over the mascot without needing a negative z-index. */}
+            <div className="relative">
+              <p className="text-[13px] font-extrabold uppercase tracking-[0.18em]" style={{ color: "var(--text-2)" }}>
+                Agent-filled task inbox
+              </p>
+              <h1
+                className="mt-4 max-w-[14ch] text-[44px] font-extrabold leading-[0.98] tracking-tight sm:text-[60px]"
+                style={{ color: "var(--text)" }}
+              >
+                Everything you owe someone.
+              </h1>
+              <p
+                className="mt-6 max-w-[48ch] text-[17px] leading-relaxed sm:text-[19px]"
+                style={{ color: "var(--text-2)" }}
+              >
+                Your Claude or ChatGPT subscription already reads your mail, calendar and chat. Point it at ToDo and
+                every morning it sorts what actually needs you into four buckets — each one a single tap from done.
+              </p>
+
+              <div className="mt-8 flex flex-wrap gap-3">
+                {signupsOpen ? (
+                  <Link
+                    href="/signup"
+                    className="inline-flex items-center gap-2 rounded-2xl px-6 py-3.5 text-[16px] font-extrabold transition active:scale-[0.98]"
+                    style={{ background: "var(--text)", color: "var(--bg)" }}
+                  >
+                    Start free
+                    <ArrowRight className="size-[18px]" strokeWidth={3} />
+                  </Link>
+                ) : null}
+                <Link
+                  href="/login"
+                  className="inline-flex items-center gap-2 rounded-2xl px-6 py-3.5 text-[16px] font-bold"
+                  style={{ border: "1px solid var(--line-strong)", color: "var(--text)" }}
+                >
+                  Sign in
+                </Link>
+              </div>
+
+              <p className="mt-4 text-[13px]" style={{ color: "var(--text-2)" }}>
+                Works with Claude and ChatGPT over MCP. No email credentials ever touch ToDo.
+              </p>
+            </div>
           </div>
 
           <div className="relative mx-auto w-full max-w-[340px]">

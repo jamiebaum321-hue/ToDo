@@ -20,6 +20,7 @@ import { NativeBridge } from "./NativeBridge";
 import { InstallPrompt } from "./InstallPrompt";
 import { bucketVars, BUCKET_ICON } from "./icons";
 import { Logo } from "@/components/Logo";
+import { Doodle } from "@/components/Doodle";
 
 export function TodoApp({ initial }: { initial: BoardPayload }) {
   return (
@@ -86,13 +87,16 @@ function Board() {
 
       {/* Desktop title row */}
       <div className="mb-5 hidden items-end justify-between lg:flex">
-        <div>
+        <div className="flex items-center gap-3">
+          <Doodle name={showDone ? "my-tasks-2" : "today"} size={38} style={{ color: "var(--text-2)" }} />
+          <div>
           <h1 className="text-[27px] font-extrabold leading-none tracking-tight" style={{ color: "var(--text)" }}>
             {showDone ? "Cleared" : total > 0 ? "Today" : "All clear"}
           </h1>
           <p className="mt-2 text-[13.5px] font-semibold" style={{ color: "var(--text-3)" }}>
             {today}
           </p>
+          </div>
         </div>
         <button
           type="button"
@@ -178,6 +182,7 @@ function Board() {
         <FirstRunEmpty hasEverSynced={Boolean(board?.lastRun)} />
       ) : visible.length === 0 ? (
         <EmptyState
+          doodle={query ? "search" : "my-tasks-2"}
           title={query ? "No match" : showDone ? "Nothing cleared yet" : "This one is empty"}
           body={query ? "Try a different word." : showDone ? "Things you finish will collect here." : "Nothing in this bucket right now."}
         />

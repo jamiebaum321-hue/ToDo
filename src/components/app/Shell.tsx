@@ -2,22 +2,37 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { History, ListChecks, Plug, Settings, type LucideIcon } from "lucide-react";
+import { Plug, type LucideIcon } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { Doodle, type DoodleName } from "@/components/Doodle";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
   href: string;
   label: string;
-  icon: LucideIcon;
+  /** The hand-drawn set where a drawing exists for the destination. */
+  doodle?: DoodleName;
+  /** Otherwise a matched line glyph — there is no hand-drawn plug yet. */
+  icon?: LucideIcon;
 }
 
 const NAV: NavItem[] = [
-  { href: "/", label: "List", icon: ListChecks },
-  { href: "/activity", label: "Activity", icon: History },
+  { href: "/", label: "Today", doodle: "today" },
+  { href: "/activity", label: "Activity", doodle: "calendar" },
   { href: "/connect", label: "Connect", icon: Plug },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/settings", label: "Settings", doodle: "settings" },
 ];
+
+/**
+ * The drawings are ink-weight line art: below about 26px the finer ones close
+ * up into a smudge, so both navs give them more room than a typical 18px tab
+ * glyph would get.
+ */
+function NavIcon({ item, size, active }: { item: NavItem; size: number; active: boolean }) {
+  if (item.doodle) return <Doodle name={item.doodle} size={size} />;
+  const Icon = item.icon!;
+  return <Icon style={{ width: size - 4, height: size - 4 }} strokeWidth={active ? 2.6 : 2.2} />;
+}
 
 function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -59,7 +74,7 @@ export function SideNav({ counts }: { counts?: Record<string, number> }) {
                 boxShadow: active ? "var(--shadow-card)" : undefined,
               }}
             >
-              <item.icon className="size-[18px]" strokeWidth={2.4} />
+              <NavIcon item={item} size={26} active={active} />
               {item.label}
             </Link>
           );
@@ -94,7 +109,7 @@ export function TabBar() {
             style={{ color: active ? "var(--text)" : "var(--text-3)" }}
             aria-current={active ? "page" : undefined}
           >
-            <item.icon className="size-[21px]" strokeWidth={active ? 2.8 : 2.2} />
+            <NavIcon item={item} size={26} active={active} />
             <span className={cn("text-[10.5px]", active ? "font-extrabold" : "font-semibold")}>{item.label}</span>
           </Link>
         );

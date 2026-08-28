@@ -1,11 +1,12 @@
 /**
  * Build every brand asset from `assets/logo-source.png`.
  *
- * The source is only 176px, so a plain upscale would go soft exactly where an
- * app icon is judged. The logo is line art in two colours, though, which means
- * we can upscale and then re-crisp: remap each pixel's ink coverage through a
- * steep curve so edges snap back to hard while the anti-aliasing that makes
- * curves look smooth survives.
+ * The source is a 1263px master, so every size below is a downscale and the
+ * detail is really there rather than invented. What the remap below still
+ * earns its keep for is colour: the logo is line art in exactly two tones, and
+ * pushing every pixel's ink coverage through a mild curve pins it to the brand
+ * cream and ink instead of whatever the export left behind, and firms up edges
+ * that a downscale always softens a little.
  *
  *   npm run gen:icons
  */
@@ -21,11 +22,17 @@ const PUBLIC = join(ROOT, "public");
 export const CREAM = { r: 250, g: 244, b: 234 };
 export const INK = { r: 14, g: 14, b: 12 };
 const CREAM_HEX = "#FAF4EA";
+/** The dark theme's page background, for the dark splash screen. */
+const DARK_HEX = "#131209";
 
 const CREAM_LUM = 245;
 const INK_LUM = 12;
-/** Higher = harder edges. 3.2 keeps the hand-drawn wobble without going jaggy. */
-const CRISPNESS = 3.2;
+/**
+ * Higher = harder edges. This was 3.2 when the source was a 176px thumbnail
+ * and every size was an upscale; against the real master that much would eat
+ * the hand-drawn wobble, so it is now just enough to undo downscale softening.
+ */
+const CRISPNESS = 1.4;
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const crisp = (t: number) => clamp01((t - 0.5) * CRISPNESS + 0.5);
@@ -38,13 +45,16 @@ async function buildMaster(size: number): Promise<Buffer> {
   const [colour, alpha] = await Promise.all([
     sharp(SOURCE)
       .flatten({ background: CREAM_HEX })
-      .resize(size, size, { kernel: "lanczos3", fit: "fill" })
+      // The master is 1263x1246 rather than square, so "contain" keeps the
+      // disc a circle where "fill" would stretch it a percent or so wide.
+      .resize(size, size, { kernel: "lanczos3", fit: "contain", background: CREAM_HEX })
       .raw()
       .toBuffer({ resolveWithObject: true }),
     sharp(SOURCE)
       .ensureAlpha()
       .extractChannel(3)
-      .resize(size, size, { kernel: "lanczos3", fit: "fill" })
+      // One channel here, so black is the transparent side of the alpha mask.
+      .resize(size, size, { kernel: "lanczos3", fit: "contain", background: "#000000" })
       .raw()
       .toBuffer({ resolveWithObject: true }),
   ]);
@@ -141,9 +151,36 @@ async function buildOgImage(master: Buffer): Promise<Buffer> {
     .toBuffer();
 }
 
+/**
+ * A logo centred on a square canvas, with room around it. Capacitor's asset
+ * generator crops and rescales these into every launcher size iOS and Android
+ * ask for, so they only need to be big and correctly padded.
+ */
+const TRANSPARENT = { r: 0, g: 0, b: 0, alpha: 0 };
+
+async function canvas(
+  master: Buffer,
+  size: number,
+  logoScale: number,
+  background: string | typeof TRANSPARENT,
+): Promise<Buffer> {
+  const inner = Math.round(size * logoScale);
+  const resized = sharp(master).resize(inner, inner, { kernel: "lanczos3" });
+  // On a solid ground, flatten the disc's own alpha onto it so the two creams
+  // meet cleanly; on a transparent one, keep the cutout.
+  const logo = await (typeof background === "string" ? resized.flatten({ background }) : resized).toBuffer();
+  const offset = Math.round((size - inner) / 2);
+
+  return sharp({ create: { width: size, height: size, channels: 4, background } })
+    .composite([{ input: logo, top: offset, left: offset }])
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+}
+
 async function main() {
   await mkdir(join(PUBLIC, "icons"), { recursive: true });
   await mkdir(join(PUBLIC, "brand"), { recursive: true });
+  await mkdir(join(ROOT, "native/assets"), { recursive: true });
 
   const master = await buildMaster(1024);
   const written: string[] = [];
@@ -187,6 +224,21 @@ async function main() {
   for (const { size, png } of icoPngs) await write(`public/icons/favicon-${size}.png`, png);
 
   await write("public/og.png", await buildOgImage(master));
+
+  // What `npx @capacitor/assets generate` reads. Keeping these generated from
+  // the same master means the launcher and App Store icons are reproducible
+  // from the repo rather than being binaries nobody can rebuild.
+  await write("native/assets/icon.png", await canvas(master, 1024, 0.92, CREAM_HEX));
+  // Android crops an adaptive icon hard, so the foreground sits well inside.
+  await write("native/assets/icon-foreground.png", await canvas(master, 1024, 0.62, TRANSPARENT));
+  await write(
+    "native/assets/icon-background.png",
+    await sharp({ create: { width: 1024, height: 1024, channels: 4, background: CREAM_HEX } })
+      .png({ compressionLevel: 9 })
+      .toBuffer(),
+  );
+  await write("native/assets/splash.png", await canvas(master, 2732, 0.22, CREAM_HEX));
+  await write("native/assets/splash-dark.png", await canvas(master, 2732, 0.22, DARK_HEX));
 
   console.log("Brand assets written:\n  " + written.join("\n  "));
 }

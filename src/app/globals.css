@@ -60,6 +60,13 @@
   --tint-drop: #efece3;
   --tint-done: #e6f2ea;
   --overlay: rgba(20, 20, 15, 0.42);
+  /*
+   * The tone the hand-drawn art is painted in when it sits behind text. It is
+   * deliberately drawn from the background family rather than the ink family:
+   * a heading can never clash with it, and the near-black headline still reads
+   * at 13:1 over the darkest part of the drawing.
+   */
+  --wash: #e4d9c3;
   color-scheme: light;
 }
 
@@ -85,6 +92,7 @@
   --tint-drop: #24221a;
   --tint-done: #10281a;
   --overlay: rgba(0, 0, 0, 0.62);
+  --wash: #302c1f;
   color-scheme: dark;
 }
 
