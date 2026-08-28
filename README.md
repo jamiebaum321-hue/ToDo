@@ -290,7 +290,7 @@ src/
   components/app/          the UI
 prisma/schema.prisma       PostgreSQL; no enums or Json columns, so it reads as plain SQL
 prisma/migrations/         checked-in SQL, applied by `prisma migrate deploy`
-tests/                     108 tests, including a real Postgres integration suite
+tests/                     137 tests, including tenant-isolation and Postgres integration suites
 ```
 
 ### Commands
@@ -298,7 +298,7 @@ tests/                     108 tests, including a real Postgres integration suit
 ```bash
 npm run dev            # development server
 npm run setup          # migrate + seed
-npm test               # 108 tests, against a real Postgres
+npm test               # 137 tests, against a real Postgres
 npm run typecheck      # tsc --noEmit
 npm run build          # migrate + production build
 npm run build:no-migrate  # build only, for CI and Docker images
@@ -313,7 +313,8 @@ npm run gen:icons      # rebuild every brand asset from assets/logo-source.png
 
 - Passwords are scrypt with a per-password salt. Session and API tokens are stored only as SHA-256 hashes — the plaintext of a connection token is shown exactly once, at creation.
 - A connection token can read and rewrite your whole list. Revoke one from **Connect** and it stops working immediately.
-- Registration closes after the first account unless `ALLOW_SIGNUPS=true`.
+- **Single-tenant by default, multi-tenant capable.** Registration closes after the first account unless `ALLOW_SIGNUPS=true`. Every row is keyed by `userId` and every query path scopes to the caller, which `tests/isolation.test.ts` proves from 29 angles — including that two accounts can hold the same email's `sourceKey` without colliding, and that one account clearing a task never suppresses it for another.
+- Isolation is enforced in application code, not in database row-level security. That is sound for the paths that exist and is regression-tested, but before opening this up to strangers you would also want: email verification, password reset, and rate limiting on `/api/auth/login` and `/api/mcp`. None of those are here.
 - `/api/cron/tick` is open in development and requires `CRON_SECRET` in production; without the secret set, it returns 503 rather than running unauthenticated.
 - The service worker never caches `/api/*`, so nobody else's session can pick up your list from a shared browser.
 - `DATABASE_URL` and `DIRECT_URL` are the only database secrets; neither is exposed to the browser (nothing prefixed `NEXT_PUBLIC_` touches them).
