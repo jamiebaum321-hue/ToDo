@@ -367,33 +367,38 @@ export function TaskSheet({
           ) : null}
         </div>
 
-        {/* Action bar ---------------------------------------------------- */}
+        {/* Action bar. Two tiers, not one squeeze: Done gets the full width
+            it deserves, and the four quieter verbs share the row beneath it
+            with their names visible — cramming five controls into one line
+            left them all too small to hit and too anonymous to learn. */}
         <footer
-          className="safe-bottom flex items-center gap-2 border-t px-4 py-3"
+          className="safe-bottom flex flex-col gap-2 border-t px-4 py-3"
           style={{ borderColor: "var(--line)", background: "var(--card-alt)" }}
         >
           <button
             type="button"
             onClick={() => onComplete(task)}
-            className="flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-3.5 text-[15px] font-extrabold text-white transition active:scale-[0.98]"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3.5 text-[15px] font-extrabold text-white transition active:scale-[0.98]"
             style={{ background: "var(--accent-done)" }}
           >
             <Check className="size-[18px]" strokeWidth={3.2} />
             Done
           </button>
 
-          <SheetAction label="Snooze" active={menu === "snooze"} onClick={() => setMenu(menu === "snooze" ? "none" : "snooze")}>
-            <Clock className="size-[18px]" strokeWidth={2.5} />
-          </SheetAction>
-          <SheetAction label="Delegate" active={menu === "delegate"} onClick={() => setMenu(menu === "delegate" ? "none" : "delegate")}>
-            <Forward className="size-[18px]" strokeWidth={2.5} />
-          </SheetAction>
-          <SheetAction label="Move" active={menu === "move"} onClick={() => setMenu(menu === "move" ? "none" : "move")}>
-            <FolderInput className="size-[18px]" strokeWidth={2.5} />
-          </SheetAction>
-          <SheetAction label="Delete" onClick={() => onDelete(task)} danger>
-            <Trash2 className="size-[18px]" strokeWidth={2.5} />
-          </SheetAction>
+          <div className="grid grid-cols-4 gap-2">
+            <SheetAction label="Snooze" active={menu === "snooze"} onClick={() => setMenu(menu === "snooze" ? "none" : "snooze")}>
+              <Clock className="size-[18px]" strokeWidth={2.5} />
+            </SheetAction>
+            <SheetAction label="Delegate" active={menu === "delegate"} onClick={() => setMenu(menu === "delegate" ? "none" : "delegate")}>
+              <Forward className="size-[18px]" strokeWidth={2.5} />
+            </SheetAction>
+            <SheetAction label="Move" active={menu === "move"} onClick={() => setMenu(menu === "move" ? "none" : "move")}>
+              <FolderInput className="size-[18px]" strokeWidth={2.5} />
+            </SheetAction>
+            <SheetAction label="Delete" onClick={() => onDelete(task)} danger>
+              <Trash2 className="size-[18px]" strokeWidth={2.5} />
+            </SheetAction>
+          </div>
         </footer>
       </div>
     </div>
@@ -419,7 +424,7 @@ function SheetAction({
       onClick={onClick}
       aria-label={label}
       title={label}
-      className="grid size-[52px] shrink-0 place-items-center rounded-2xl transition active:scale-90"
+      className="flex flex-col items-center justify-center gap-1 rounded-2xl py-2.5 transition active:scale-95"
       style={{
         background: active ? "var(--bg-alt)" : "transparent",
         border: "1px solid var(--line)",
@@ -427,6 +432,7 @@ function SheetAction({
       }}
     >
       {children}
+      <span className="text-[11px] font-bold leading-none">{label}</span>
     </button>
   );
 }

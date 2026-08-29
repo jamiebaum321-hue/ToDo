@@ -36,10 +36,12 @@ describe("gmail: resolve the mailbox by identity, never by index", () => {
     expect(gmailBase("not-an-address")).toBe("https://mail.google.com/mail/");
   });
 
-  it("prefers the RFC-822 id, then the thread id, then whatever is left", () => {
+  it("prefers the thread id, then the RFC-822 search, then whatever is left", () => {
+    // Field-ordered: #all/<threadId> lands ON the conversation; the search is
+    // durable but lands on a results page the user still has to click.
     const all = { messageId: "<a@b.c>", threadId: "t1", externalId: "m1", account: "j@w.com" };
-    expect(buildGmailWebUrl(all)).toContain("#search/rfc822msgid:a%40b.c");
-    expect(buildGmailWebUrl({ ...all, messageId: null })).toContain("#all/t1");
+    expect(buildGmailWebUrl(all)).toContain("#all/t1");
+    expect(buildGmailWebUrl({ ...all, threadId: null })).toContain("#search/rfc822msgid:a%40b.c");
     expect(buildGmailWebUrl({ ...all, messageId: null, threadId: null })).toContain("#all/m1");
     expect(buildGmailWebUrl({})).toBeNull();
   });

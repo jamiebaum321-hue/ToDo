@@ -219,6 +219,13 @@ model Task {
   sourceProvider   String? // outlook | gmail | teams | zoom | slack | calendar | manual | ...
   sourceType       String? // email | message | meeting | event | file | call
   sourceExternalId String?
+  /// RFC-822 Message-ID header. Kept so mail links can be rebuilt or repaired
+  /// at read time — a URL alone cannot say which ids went into it.
+  sourceMessageId  String?
+  /// Gmail's thread id. The ONLY id the Gmail app scheme resolves; deriving it
+  /// from a stored #all/<id> URL field-tested as "failed to open link" when
+  /// that id was actually a message id, so it is stored, not inferred.
+  sourceThreadId   String?
   sourceAccount    String? // which mailbox / workspace this came from
   sourceFrom       String? // "Bob Whitaker <bob@acme.com>"
   sourceSubject    String?

@@ -47,7 +47,7 @@ const SOURCE_SCHEMA = {
       "REQUIRED for Gmail if you can get it: the RFC-822 Message-ID header (Gmail API: the 'Message-ID' entry in payload.headers). It makes the only Gmail link that always resolves — it survives archiving, label moves and a different signed-in account. Without it the button often lands on the inbox instead of the thread.",
     ),
     threadId: str(
-      "Gmail's threadId (every messages.get returns one). Gmail's deep link resolves a THREAD id, not a message id, so send this whenever you have no Message-ID header — otherwise the link opens All Mail.",
+      "REQUIRED for Gmail (every messages.get returns one): the only id that lands ON the conversation. The web link opens the thread directly with it, and the Gmail app deep link resolves ONLY a thread id — handed a message id the app says 'failed to open link' (field-tested). Without it the user gets a search page at best.",
     ),
     account: str(
       "REQUIRED when the user has more than one account: the mailbox address, e.g. 'jamie@company.com'. Gmail's /u/0/ numbering follows whatever order accounts were signed into the browser, so without this the link can open the wrong inbox entirely.",
@@ -57,7 +57,7 @@ const SOURCE_SCHEMA = {
     snippet: str("A short quote from the original so the task has context without opening it."),
     receivedAt: str("ISO 8601 timestamp of the original item."),
     accountIndex: int("For Gmail's /u/{n}/ multi-account URLs. Defaults to 0."),
-    url: str("The canonical web URL if the connector gave you one (Graph webLink, Teams permalink). Always prefer this over anything derived, and send it untouched — the Graph webLink is field-tested as the one browser link that opens the exact thread, so the app keeps it byte-for-byte and mines it for the mobile app link."),
+    url: str("The canonical web URL if the connector gave you one (Graph webLink, Teams permalink, a calendar event's webLink/htmlLink). Always prefer this over anything derived, and send it untouched — the Graph webLink is field-tested as the one browser link that opens the exact thread, so the app keeps it byte-for-byte and mines it for the mobile app link. Use DEFAULT Graph ids throughout (never Prefer: IdType=ImmutableId — links built from immutable ids do not resolve in Outlook on the web)."),
     desktopUrl: str("Desktop app URL if you know it, e.g. msteams:/l/message/..."),
     mobileUrl: str("Mobile app URL if you know it, e.g. ms-outlook://emails/message?restId=..."),
   },
@@ -90,14 +90,14 @@ const LINKS_SCHEMA = {
 const DRAFT_SCHEMA = {
   type: "object",
   description:
-    "A reply you already wrote and saved to the user's drafts. Adds a 'See your draft' button next to the open button, so the task is one tap from sent.",
+    "A reply you already wrote and saved to the user's drafts. Adds a 'See your draft' button next to the open button, so the task is one tap from sent. The draft MUST be a true REPLY draft created on the source thread — Gmail: drafts.create with message.threadId set to the source thread (plus In-Reply-To/References of the message you are answering); Outlook: POST /me/messages/{sourceId}/createReply, then PATCH the body. Never a standalone new message: the app's draft buttons open the CONVERSATION with the draft sitting inside it (field-tested as the only handoff that works on phones), and a standalone draft appears nowhere.",
   properties: {
     provider: str("outlook | gmail | ..."),
     kind: str("reply | reply_all | forward | new", { enum: ["reply", "reply_all", "forward", "new"] }),
     subject: str("Draft subject."),
     body: str("Draft body, for preview inside the app."),
-    externalId: str("The draft's id in the provider, so the button opens that exact draft."),
-    url: str("Direct URL to the draft."),
+    externalId: str("The reply draft's provider id (Gmail draft id / the Graph id createReply returned)."),
+    url: str("Direct URL to the draft if the provider hands you one; otherwise omit — the app links the thread, where a reply draft already shows."),
     desktop: str("Desktop app URL to the draft."),
     mobile: str("Mobile app URL to the draft."),
   },
@@ -229,7 +229,8 @@ export const TOOLS: ToolDefinition[] = [
               }
             : null,
           guidance:
-            "Build the full list for the window, then send it in ONE sync_tasks call with replace='window'. Anything you leave out is cleared. Anything in alreadyHandled will be refused and reported back to you — do not re-raise those just because the original email is still sitting in the mailbox; only something genuinely new on the same item (a fresh reply, a moved deadline) justifies a new task, and a message you have already seen is not new evidence. Follow `houseRules` even where this run's prompt says nothing about them.",
+            "Build the full list for the window, then send it in ONE sync_tasks call with replace='window'. Anything you leave out is cleared. Anything in alreadyHandled will be refused and reported back to you — do not re-raise those just because the original email is still sitting in the mailbox; only something genuinely new on the same item (a fresh reply, a moved deadline) justifies a new task, and a message you have already seen is not new evidence. Follow `houseRules` even where this run's prompt says nothing about them. " +
+            "Link rules, field-tested: Gmail needs source.threadId (the only id that opens the conversation in browser AND app) plus source.account; Outlook needs the Graph webLink untouched in source.url, with DEFAULT Graph ids (immutable ids break links). A draft must be a REPLY draft created on the source thread (Gmail drafts.create with threadId; Outlook createReply), never a standalone message. For a calendar invite, add a links[] entry kind 'calendar' with the event's own webLink/htmlLink so accepting happens in the calendar, not the mailbox.",
         },
       );
     },
@@ -618,10 +619,20 @@ export const TOOLS: ToolDefinition[] = [
       });
       if (!task) return toolError("No task matches that id or sourceKey.");
 
+      // Existence first: the thread/folder fallbacks below can give any mail
+      // draft a URL, which must not turn a phantom draft into a button.
+      if (!args?.body && !args?.externalId && !args?.url && !args?.web && !args?.desktop && !args?.mobile) {
+        return toolError("Give me at least a URL, an externalId, or the draft body — otherwise the button has nowhere to go.");
+      }
+
       const provider = normalizeProvider(args?.provider ?? task.sourceProvider);
       const target = deriveLinkTarget({
         provider,
         externalId: args?.externalId,
+        // A reply draft rides the source conversation, so its links aim there.
+        threadId: task.sourceThreadId,
+        anchorItemId: task.sourceExternalId,
+        account: task.sourceAccount,
         kind: "draft",
         web: args?.url ?? args?.web,
         desktop: args?.desktop,

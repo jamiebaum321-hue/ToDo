@@ -335,9 +335,11 @@ describe("rows stored before mail-links.ts existed", () => {
 
     const gmail = dto.links.find((l) => l.label === "Legacy Gmail row");
     expect(gmail?.web).toBe("https://mail.google.com/mail/#all/18c9f0");
-    // And the phone gets the field-confirmed Gmail app scheme, derived from
-    // the thread id already sitting in the link.
-    expect(gmail?.mobile).toBe("googlegmail:///cv=18c9f0");
+    // No app scheme here, deliberately: the id in a stored #all/ URL might be
+    // a message id, and cv= with a message id field-tested as the Gmail app
+    // saying "failed to open link". The scheme comes back the moment a sweep
+    // stores the real thread id; until then the browser link is the truth.
+    expect(gmail?.mobile ?? null).toBeNull();
   });
 
   it("treats an app slot that just copies the web link as empty, and keeps a real one", async () => {
@@ -379,8 +381,9 @@ describe("rows stored before mail-links.ts existed", () => {
     // Field-confirmed on a real phone: googlegmail:///cv= opens the app on
     // the exact thread. The browser link stays the universal fallback.
     expect(link?.mobile).toBe("googlegmail:///cv=t9");
-    // The fixture carries a Message-ID, so the browser link is the durable
-    // rfc822 search — the thread id still reached the app scheme regardless.
-    expect(link?.web).toContain("#search/rfc822msgid");
+    // With a thread id known, the browser link lands ON the conversation —
+    // the rfc822 search (which lands on a results page) is only the
+    // fallback for tasks that never got a thread id.
+    expect(link?.web).toContain("#all/t9");
   });
 });
