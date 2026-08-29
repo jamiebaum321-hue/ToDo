@@ -23,20 +23,45 @@ describe("deriveLinkTarget", () => {
     expect(t.mobile).toContain("emails/drafts");
   });
 
-  it("prefers the URL the connector gave us over anything derived", () => {
-    const graphLink = "https://outlook.office365.com/owa/?ItemID=real-one";
+  it("keeps the connector's URL as the identity, but never its legacy shape", () => {
+    // The Graph webLink names the right message, so its id wins over the
+    // externalId — but the owa/?ItemID form strands people on the inbox, so
+    // the shape is rebuilt as the modern deeplink and exvsurl dies here.
+    const graphLink =
+      "https://outlook.office365.com/owa/?ItemID=AAMkAGI2%2BTG93%2FAAA%3D&exvsurl=1&viewmodel=ReadMessageItem";
     const t = deriveLinkTarget({ provider: "outlook", externalId: "ignored", web: graphLink });
-    expect(t.web).toBe(graphLink);
+    expect(t.web).toBe("https://outlook.office.com/mail/deeplink/read/AAMkAGI2-TG93_AAA%3D");
   });
 
-  it("uses the RFC-822 message id for Gmail, which survives label moves", () => {
+  it("mines the webLink for the id, so the phone gets the app even when that URL is all we got", () => {
+    const graphLink = "https://outlook.office365.com/owa/?ItemID=AAMkAGI2%2BTG93%2FAAA%3D&exvsurl=1";
+    const t = deriveLinkTarget({ provider: "outlook", web: graphLink });
+    expect(t.mobile).toBe("ms-outlook://emails/message?restId=AAMkAGI2-TG93_AAA%3D");
+    expect(t.desktop).toBe(t.mobile);
+  });
+
+  it("passes a URL that is already the modern shape straight through", () => {
+    const good = "https://outlook.office.com/mail/deeplink/read/AAMkAGI2TG93AAA%3D";
+    const t = deriveLinkTarget({ provider: "outlook", web: good });
+    expect(t.web).toBe(good);
+  });
+
+  it("never stores a custom scheme where a browser will click it", () => {
+    const t = deriveLinkTarget({ provider: "outlook", web: "ms-outlook://emails/message?restId=abc" });
+    expect(t.web ?? null).toBeNull();
+    expect(t.desktop).toBe("ms-outlook://emails/message?restId=abc");
+  });
+
+  it("uses the RFC-822 message id for Gmail, and never a browser-local index", () => {
+    // accountIndex numbers accounts by sign-in order in ONE browser; honouring
+    // it is how links open the wrong mailbox on every other machine.
     const t = deriveLinkTarget({ provider: "gmail", messageId: "<abc@mail.gmail.com>", accountIndex: 2 });
-    expect(t.web).toBe("https://mail.google.com/mail/u/2/#search/rfc822msgid:abc%40mail.gmail.com");
+    expect(t.web).toBe("https://mail.google.com/mail/#search/rfc822msgid:abc%40mail.gmail.com");
   });
 
   it("falls back to a Gmail thread id when there is no message id", () => {
     const t = deriveLinkTarget({ provider: "gmail", externalId: "18c9f0" });
-    expect(t.web).toBe("https://mail.google.com/mail/u/0/#all/18c9f0");
+    expect(t.web).toBe("https://mail.google.com/mail/#all/18c9f0");
   });
 
   it("names the Gmail account instead of guessing at /u/0/", () => {
@@ -48,7 +73,7 @@ describe("deriveLinkTarget", () => {
 
   it("prefers the thread id over the message id — only the thread resolves", () => {
     const t = deriveLinkTarget({ provider: "gmail", externalId: "1a034151929c4d51", threadId: "18c9f0" });
-    expect(t.web).toBe("https://mail.google.com/mail/u/0/#all/18c9f0");
+    expect(t.web).toBe("https://mail.google.com/mail/#all/18c9f0");
   });
 
   it("still prefers the RFC-822 id over everything, account and all", () => {
@@ -65,7 +90,7 @@ describe("deriveLinkTarget", () => {
 
   it("ignores an account that is not an address", () => {
     const t = deriveLinkTarget({ provider: "gmail", threadId: "18c9f0", account: "personal" });
-    expect(t.web).toBe("https://mail.google.com/mail/u/0/#all/18c9f0");
+    expect(t.web).toBe("https://mail.google.com/mail/#all/18c9f0");
   });
 
   it("keeps the https link for Gmail on mobile — app links handle it", () => {
@@ -113,9 +138,20 @@ describe("chooseUrl", () => {
     expect(chooseUrl(target, "android")).toBe("app://mobile");
   });
 
-  it("takes the desktop app on a computer", () => {
-    expect(chooseUrl(target, "macos")).toBe("app://desktop");
-    expect(chooseUrl(target, "windows")).toBe("app://desktop");
+  it("defaults desktops to the web, where the scheme is a gamble", () => {
+    // Classic Outlook ignores ms-outlook:// silently; the web app is signed
+    // in for anyone who uses it. The scheme stays one deliberate tap away.
+    expect(chooseUrl(target, "macos")).toBe("https://web");
+    expect(chooseUrl(target, "windows")).toBe("https://web");
+  });
+
+  it("still reaches the desktop app when the user asks for the app", () => {
+    expect(chooseUrl(target, "macos", "app")).toBe("app://desktop");
+    expect(chooseUrl(target, "windows", "app")).toBe("app://desktop");
+  });
+
+  it("takes an https desktop link under auto — no gamble there", () => {
+    expect(chooseUrl({ web: "https://web", desktop: "https://desktop-app" }, "windows")).toBe("https://desktop-app");
   });
 
   it("honours a preference for the browser", () => {
@@ -173,14 +209,23 @@ describe("offering the other way to open it", () => {
     mobile: "ms-outlook://emails/message?restId=abc",
   };
 
-  it("offers the browser when the button goes to the app", () => {
-    const chosen = chooseUrl(outlook, "windows");
+  it("offers the browser when the app preference sends the button to the app", () => {
+    const chosen = chooseUrl(outlook, "windows", "app");
     expect(alternateFor(outlook, chosen, "windows")).toEqual({ url: outlook.web, kind: "web" });
   });
 
-  it("offers the app when the button goes to the browser", () => {
-    const chosen = chooseUrl(outlook, "windows", "web");
+  it("offers the app when the desktop default sends the button to the browser", () => {
+    // This pairing is the new-Outlook path: web by default, the ms-outlook
+    // handoff one deliberate tap away, stuck-detection behind it.
+    const chosen = chooseUrl(outlook, "windows");
+    expect(chosen).toBe(outlook.web);
     expect(alternateFor(outlook, chosen, "windows")).toEqual({ url: outlook.desktop, kind: "app" });
+  });
+
+  it("keeps the phone on the app first, browser as the alternate", () => {
+    const chosen = chooseUrl(outlook, "ios");
+    expect(chosen).toBe(outlook.mobile);
+    expect(alternateFor(outlook, chosen, "ios")).toEqual({ url: outlook.web, kind: "web" });
   });
 
   it("offers the phone app on a phone, not the desktop one", () => {

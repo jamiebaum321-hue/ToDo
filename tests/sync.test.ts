@@ -4,6 +4,7 @@ import { syncTasks } from "@/lib/sync";
 import { syncInput, type TaskInputRaw } from "@/lib/validation";
 import { completeTask, createUserTask, dismissTask, snoozeTask, undoLastAction, togglePin } from "@/lib/actions";
 import { activeSuppressions } from "@/lib/suppression";
+import { serializeTask, taskInclude } from "@/lib/tasks";
 import { hashPassword } from "@/lib/crypto";
 
 let userId: string;
@@ -287,5 +288,45 @@ describe("the feedback loop", () => {
     expect(run.skippedCount).toBe(1);
     expect(run.client).toBe("Claude");
     expect(JSON.parse(run.skippedDetail ?? "[]")[0].title).toContain("Bob");
+  });
+});
+
+describe("rows stored before mail-links.ts existed", () => {
+  it("serves legacy bad shapes fixed, with no migration and no fresh sweep", async () => {
+    await syncTasks(userId, syncInput.parse({ tasks: [bobEmail] }), { source: "api", client: "Claude" });
+    const task = await prisma.task.findFirstOrThrow({ where: { userId } });
+
+    // Plant the two shapes real accounts are still carrying: the raw Graph
+    // webLink, and a Gmail link pinned to one browser's account order.
+    await prisma.taskLink.createMany({
+      data: [
+        {
+          taskId: task.id,
+          kind: "source",
+          label: "Legacy Outlook row",
+          provider: "outlook",
+          webUrl: "https://outlook.office365.com/owa/?ItemID=AAMk%2Ba%2Fb%3D&exvsurl=1&viewmodel=ReadMessageItem",
+          position: 8,
+        },
+        {
+          taskId: task.id,
+          kind: "source",
+          label: "Legacy Gmail row",
+          provider: "gmail",
+          webUrl: "https://mail.google.com/mail/u/3/#all/18c9f0",
+          position: 9,
+        },
+      ],
+    });
+
+    const dto = serializeTask(
+      await prisma.task.findUniqueOrThrow({ where: { id: task.id }, include: taskInclude }),
+    );
+
+    const outlook = dto.links.find((l) => l.label === "Legacy Outlook row");
+    expect(outlook?.web).toBe("https://outlook.office.com/mail/deeplink/read/AAMk-a_b%3D");
+
+    const gmail = dto.links.find((l) => l.label === "Legacy Gmail row");
+    expect(gmail?.web).toBe("https://mail.google.com/mail/#all/18c9f0");
   });
 });

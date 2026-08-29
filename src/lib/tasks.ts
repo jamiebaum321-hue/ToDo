@@ -1,5 +1,6 @@
 import type { Draft, Prisma, Task, TaskLink } from "@prisma/client";
 import { getBucket, type BucketKey } from "./buckets";
+import { normalizeMailLink } from "./mail-links";
 import { providerMeta } from "./providers";
 
 export const TASK_STATUSES = ["open", "completed", "dismissed", "snoozed", "delegated"] as const;
@@ -105,7 +106,10 @@ function serializeLink(link: TaskLink): TaskLinkDTO {
     provider: link.provider,
     providerLabel: meta.label,
     accent: meta.accent,
-    web: link.webUrl,
+    // Rows stored before mail-links.ts existed carry the raw Graph webLink and
+    // Gmail's browser-local /u/<n>/ shapes. normalize is idempotent, so fixing
+    // them here costs nothing on clean rows and spares a data migration.
+    web: normalizeMailLink(link.webUrl),
     desktop: link.desktopUrl,
     mobile: link.mobileUrl,
     isPrimary: link.isPrimary,
@@ -161,7 +165,7 @@ export function serializeTask(task: TaskWithRelations, opts?: { includeDrafts?: 
             kind: task.draft.kind,
             subject: task.draft.subject,
             body: task.draft.body,
-            web: task.draft.webUrl,
+            web: normalizeMailLink(task.draft.webUrl),
             desktop: task.draft.desktopUrl,
             mobile: task.draft.mobileUrl,
           }
@@ -202,7 +206,7 @@ export function serializeTaskForAgent(task: TaskWithRelations) {
       kind: l.kind,
       label: l.label,
       provider: l.provider,
-      web: l.webUrl,
+      web: normalizeMailLink(l.webUrl),
       desktop: l.desktopUrl,
       mobile: l.mobileUrl,
     })),
