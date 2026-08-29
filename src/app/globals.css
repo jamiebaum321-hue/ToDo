@@ -162,13 +162,19 @@ body {
 .fade-swap { animation: fade-swap 0.26s ease both; }
 
 /*
- * The board↔list swap runs as a browser view transition (swapView in
- * TodoApp): the old view fades out where it stands, then the new one fades
- * in already sitting at its final, centred width. Animating the live layout
- * instead — a max-width transition — made every card squeeze and rewrap
- * mid-flight, which is exactly the jarring this replaces. The out and the
- * in overlap by a few frames so the page never blinks down to bare
- * background between them.
+ * The board↔list swap is a scoped view transition (swapView in TodoApp).
+ * Only the task region carries a view-transition-name, so the rail, header
+ * and chips never so much as flicker — the tapped chip restyles instantly —
+ * while the region does a legible two-beat move: its box glides to the new
+ * centred width (the browser tweens the group's position and size by
+ * default; we only slow that enough to be seen), the old view fades off it
+ * in the first beat, and the new view fades in on it for the second.
+ *
+ * The root snapshots are pinned inert. The first cut animated the root
+ * pair instead, and the browser's plus-lighter blend dipped the entire
+ * page — sidebar included — in brightness for a third of a second. At that
+ * speed the eye reads a flash, or nothing at all, not a fade: field-tested
+ * twice as "didn't work".
  */
 @keyframes vt-fade-out {
   from { opacity: 1; }
@@ -178,12 +184,24 @@ body {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-::view-transition-old(root) { animation: vt-fade-out 0.16s ease-in both; }
-::view-transition-new(root) { animation: vt-fade-in 0.26s ease-out 0.1s both; }
+
+::view-transition-old(root),
+::view-transition-new(root) { animation: none; }
+::view-transition-old(root) { opacity: 0; }
+::view-transition-new(root) { opacity: 1; }
+
+::view-transition-group(board-swap) {
+  animation-duration: 0.45s;
+  animation-timing-function: cubic-bezier(0.3, 0.8, 0.3, 1);
+}
+::view-transition-old(board-swap) { animation: vt-fade-out 0.18s ease-in both; }
+::view-transition-new(board-swap) { animation: vt-fade-in 0.3s ease-out 0.15s both; }
 
 @media (prefers-reduced-motion: reduce) {
   .anim-float, .anim-twinkle, .anim-pop, .anim-wave, .fade-swap { animation: none; }
-  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  ::view-transition-group(board-swap),
+  ::view-transition-old(board-swap),
+  ::view-transition-new(board-swap) { animation: none; }
 }
 
 /* Utility layer -------------------------------------------------------- */
