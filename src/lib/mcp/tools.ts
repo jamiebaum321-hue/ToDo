@@ -57,7 +57,7 @@ const SOURCE_SCHEMA = {
     snippet: str("A short quote from the original so the task has context without opening it."),
     receivedAt: str("ISO 8601 timestamp of the original item."),
     accountIndex: int("For Gmail's /u/{n}/ multi-account URLs. Defaults to 0."),
-    url: str("The canonical web URL if the connector gave you one (Graph webLink, Teams permalink). Always prefer this over anything derived — the app rewrites a raw Graph webLink into a stable OWA deeplink itself, so send it as-is."),
+    url: str("The canonical web URL if the connector gave you one (Graph webLink, Teams permalink). Always prefer this over anything derived, and send it untouched — the Graph webLink is field-tested as the one browser link that opens the exact thread, so the app keeps it byte-for-byte and mines it for the mobile app link."),
     desktopUrl: str("Desktop app URL if you know it, e.g. msteams:/l/message/..."),
     mobileUrl: str("Mobile app URL if you know it, e.g. ms-outlook://emails/message?restId=..."),
   },
