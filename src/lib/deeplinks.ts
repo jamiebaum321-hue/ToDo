@@ -21,6 +21,12 @@ export interface DeriveInput extends LinkTarget {
   threadId?: string | null;
   /** The mailbox address, e.g. "jamie@company.com". Names the Gmail account. */
   account?: string | null;
+  /**
+   * For a draft: the id of the SOURCE message it replies to. A reply draft
+   * lives inside that conversation, so the app handoff opens the thread —
+   * the ms-outlook drafts scheme field-tested as opening the app on nothing.
+   */
+  anchorItemId?: string | null;
   /** Which signed-in account, for Gmail's /u/{n}/ and Outlook mailboxes. */
   accountIndex?: number | null;
   /** Zoom passcode, Teams tenant, etc. */
@@ -87,13 +93,21 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
       // it produced.)
       const parsed = out.web ? parseOutlookWebLink(out.web) : null;
       const itemId = id ?? parsed?.itemId;
+      const anchor = clean(input.anchorItemId);
 
       if (!out.web && itemId) {
         out.web = outlookWebLink(itemId, kind === "draft" ? "draft" : "message");
       }
-      if (!out.mobile && itemId) {
-        // Field-confirmed: opens the Outlook app on the message, iOS and Android.
-        out.mobile = outlookMobileLink(itemId, kind === "draft" ? "draft" : "message");
+      if (!out.mobile) {
+        // Field-confirmed: emails/message opens the app on the conversation,
+        // iOS and Android. The drafts variant opens the app on nothing, so a
+        // draft's app link aims at the thread it replies to instead — the
+        // reply draft is sitting right there in the conversation view.
+        if (kind === "draft") {
+          if (anchor) out.mobile = outlookMobileLink(anchor, "message");
+        } else if (itemId) {
+          out.mobile = outlookMobileLink(itemId, "message");
+        }
       }
       // No desktop slot on purpose. New Outlook for Windows registers the
       // scheme but answers emails/message with "this link isn't supported"
@@ -102,9 +116,14 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
       break;
     }
     case "outlook_calendar": {
-      if (!out.web && id) out.web = `https://outlook.office.com/calendar/item/${encodeURIComponent(id)}`;
-      if (!out.mobile && id) out.mobile = `ms-outlook://events/open?restId=${encodeURIComponent(id)}`;
-      if (!out.desktop) out.desktop = out.mobile ?? undefined;
+      // The event's own webLink (Graph) is the link that opens the event —
+      // instructions tell the agent to send it, and it passes through above
+      // untouched. The path built from a bare id is the last resort. No
+      // custom schemes here: the ms-outlook events variants are unverified,
+      // and the mail ones taught us how those half-work. Accepting an invite
+      // happens in the signed-in calendar, web everywhere.
+      if (!out.web && id) out.web = `https://outlook.office365.com/calendar/item/${encodeURIComponent(id)}`;
+      if (!out.mobile) out.mobile = out.web ?? undefined;
       break;
     }
     case "gmail": {
@@ -149,7 +168,20 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
       break;
     }
     case "google_calendar": {
-      if (!out.web && id) out.web = `https://calendar.google.com/calendar/u/${u}/r/eventedit/${encodeURIComponent(id)}`;
+      // Prefer the API's own htmlLink (sent as source.url). From ids, the
+      // event VIEW link is eid = base64url("<eventId> <calendarEmail>") —
+      // the same token htmlLink carries. The old eventedit path opened the
+      // event for editing, which is not what "look at this invite" means,
+      // and /u/<n>/ numbering is the same wrong-account trap Gmail had.
+      if (!out.web && id) {
+        const email = clean(input.account);
+        if (email) {
+          const eid = Buffer.from(`${id} ${email}`, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+          out.web = `https://calendar.google.com/calendar/event?eid=${eid}`;
+        } else {
+          out.web = `https://calendar.google.com/calendar/u/${u}/r/eventedit/${encodeURIComponent(id)}`;
+        }
+      }
       if (!out.mobile) out.mobile = out.web ?? undefined;
       break;
     }
@@ -285,7 +317,7 @@ export function defaultLabel(provider: ProviderKey | string | null | undefined, 
   const name =
     p === "manual" || p === "other"
       ? null
-      : { outlook: "Outlook", gmail: "Gmail", teams: "Teams", slack: "Slack", zoom: "Zoom", google_calendar: "Google Calendar", outlook_calendar: "Outlook", notion: "Notion", linear: "Linear", jira: "Jira", asana: "Asana", github: "GitHub" }[p];
+      : { outlook: "Outlook", gmail: "Gmail", teams: "Teams", slack: "Slack", zoom: "Zoom", google_calendar: "Google Calendar", outlook_calendar: "Outlook Calendar", notion: "Notion", linear: "Linear", jira: "Jira", asana: "Asana", github: "GitHub" }[p];
 
   switch (kind) {
     case "draft":

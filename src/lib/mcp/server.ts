@@ -42,7 +42,7 @@ export async function buildInstructions(actor: Actor): Promise<string> {
   const rules = [
     `Cover a rolling ${settings.rollingWindowDays}-day window, backwards and forwards, on every run.`,
     settings.requestDrafts
-      ? "Where a reply is obvious, WRITE IT and save it to the user's drafts, then pass the draft in `draft` — do this whether or not the prompt asked for drafts, they have turned it on here."
+      ? "Where a reply is obvious, WRITE IT as a REPLY DRAFT on the source thread (Gmail: drafts.create with the thread's threadId; Outlook: createReply on the message, then patch the body), then pass it in `draft` — never a standalone draft, and do this whether or not the prompt asked for drafts, they have turned it on here."
       : "Do not write draft replies. The user has turned that off.",
     settings.showReasons
       ? "Give every task a one-line `reason` for the bucket you chose. The user reads them."
@@ -66,10 +66,12 @@ export async function buildInstructions(actor: Actor): Promise<string> {
     "",
     "## Links",
     "",
-    "Every task should carry a `source` with the provider's own id and URL, so the app can put a button on the card that opens the exact email, message or meeting. That button is the whole point of the app, and a link that lands on a generic inbox is worse than no link at all:",
+    "Every task should carry a `source` with the provider's own ids and URL, so the app can put a button on the card that opens the exact email, message or meeting. That button is the whole point of the app, and a link that lands on a generic inbox is worse than no link at all. These rules are field-tested — real people tapped real tasks:",
     "",
-    "- **Gmail** — send `source.messageId` (the RFC-822 `Message-ID` header) whenever you can; it is the only Gmail link that always resolves. Failing that send `source.threadId`, because Gmail's deep link resolves a thread id and falls back to All Mail when handed a message id. Always send `source.account`.",
-    "- **Outlook / Graph** — the message id in `source.externalId`, `webLink` in `source.url`, and the mailbox in `source.account`.",
+    "- **Gmail** — `source.threadId` is REQUIRED (every `messages.get` returns one): it is the only id that lands ON the conversation, in the browser and in the Gmail app alike. Also send `source.messageId` (the RFC-822 `Message-ID` header) as the durable fallback, and always `source.account`.",
+    "- **Outlook / Graph** — the message's `webLink` in `source.url`, UNTOUCHED — it is the one browser link that opens the thread. The Graph id in `source.externalId`, the mailbox in `source.account`, and default Graph ids only (never `Prefer: IdType=\"ImmutableId\"`; links built from immutable ids do not resolve).",
+    "- **Drafts** — a draft must be a REPLY draft created on the source thread (Gmail: `drafts.create` with `message.threadId`; Outlook: `createReply`, then patch the body). The draft buttons open the conversation with the draft sitting in it; a standalone draft shows up nowhere.",
+    "- **Calendar invites** — add a `links` entry with kind `calendar` carrying the event's own link (`webLink` on a Graph event, `htmlLink` from Google Calendar), plus the event id and account, so accepting happens in the calendar, not the mailbox.",
     "- **Teams, Slack, Zoom** — the permalink in `source.url`; the app derives the app links from it.",
   ].join("\n");
 }
@@ -80,12 +82,13 @@ On a scheduled run, always start with \`get_run_context\`, then send the whole l
 
 The single rule that matters: anything in \`alreadyHandled\` has been cleared by the user in the app and must never be raised again. You are looking at a rolling window, so yesterday's unanswered email is still sitting in the mailbox — but if the user marked it done, it is done, whatever the mailbox says.
 
-Every task should carry a \`source\` with the provider's own id and URL, so the app can put a button on the card that opens the exact email, message or meeting. Where you can write the reply, save it to their drafts and pass it in \`draft\` — that turns the task into two taps.
+Every task should carry a \`source\` with the provider's own ids and URL, so the app can put a button on the card that opens the exact email, message or meeting. Where you can write the reply, write it as a REPLY DRAFT on the source thread (Gmail: \`drafts.create\` with \`message.threadId\`; Outlook: \`createReply\`, then patch the body) and pass it in \`draft\` — that turns the task into two taps, and a standalone draft shows up nowhere.
 
-That button is the whole point of the app, and a link that lands on a generic inbox is worse than no link at all, so spend the extra call to get the ids right:
+That button is the whole point of the app, and a link that lands on a generic inbox is worse than no link at all, so spend the extra call to get the ids right (these rules are field-tested):
 
-- **Gmail** — send \`source.messageId\` (the RFC-822 \`Message-ID\` header, from \`payload.headers\`) whenever you can; it is the only Gmail link that always resolves the thread. Failing that send \`source.threadId\`, because Gmail's deep link resolves a thread id and quietly falls back to All Mail when handed a message id. Always send \`source.account\` — Gmail numbers accounts by browser sign-in order, so without the address the link can open the wrong mailbox.
-- **Outlook / Graph** — send the message id in \`source.externalId\`, and \`source.url\` when the connector gave you \`webLink\`. Send \`source.account\` for the mailbox.
+- **Gmail** — \`source.threadId\` is REQUIRED (every \`messages.get\` returns one): the only id that lands ON the conversation, in the browser and in the Gmail app alike. Also send \`source.messageId\` (the RFC-822 \`Message-ID\` header, from \`payload.headers\`) as the durable fallback, and always \`source.account\` — Gmail numbers accounts by browser sign-in order, so without the address the link can open the wrong mailbox.
+- **Outlook / Graph** — send the message's \`webLink\` in \`source.url\`, untouched; the message id in \`source.externalId\`; the mailbox in \`source.account\`. Default Graph ids only — never \`Prefer: IdType="ImmutableId"\`; links built from immutable ids do not resolve.
+- **Calendar invites** — add a \`links\` entry with kind \`calendar\` carrying the event's own link (\`webLink\` on a Graph event, \`htmlLink\` from Google Calendar), so accepting happens in the calendar, not the mailbox.
 - **Teams, Slack, Zoom** — send the permalink in \`source.url\`; the app derives the desktop and mobile app links from it.
 
 If a connector hands you a canonical URL, pass it in \`source.url\` — a real permalink always beats one the app has to reconstruct.`;

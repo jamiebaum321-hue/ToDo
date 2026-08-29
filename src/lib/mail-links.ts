@@ -158,18 +158,25 @@ export function buildGmailWebUrl(input: GmailUrlInput): string | null {
   const thread = input.threadId?.trim();
   const id = input.externalId?.trim();
 
+  if ((input.kind ?? "").toLowerCase() === "draft") {
+    // A reply draft lives inside its thread, so the thread IS the draft link.
+    // The old `#drafts?compose=<id>` form field-tested as opening an empty
+    // compose window — Gmail wants its own compose token there, not an API
+    // draft id — and the drafts folder is the honest fallback without one.
+    return thread ? `${base}#all/${encodeURIComponent(thread)}` : `${base}#drafts`;
+  }
+  // The thread id first: #all/<threadId> lands ON the conversation. The
+  // rfc822msgid search is more durable, but it field-tested as landing on a
+  // search-results list the user still has to click through — "did not go to
+  // the thread". So it is the fallback, not the default.
+  if (thread) {
+    return `${base}#all/${encodeURIComponent(thread)}`;
+  }
   if (mid) {
-    // Searching by RFC-822 id survives label moves, archiving and a change of
-    // signed-in account. Nothing else does.
     return `${base}#search/rfc822msgid:${encodeURIComponent(mid.replace(/[<>]/g, ""))}`;
   }
-  if ((input.kind ?? "").toLowerCase() === "draft" && id) {
-    return `${base}#drafts?compose=${encodeURIComponent(id)}`;
-  }
-  // #all/ resolves a THREAD id. Handed a message id it shows All Mail, so the
-  // thread wins whenever both are known.
-  const best = thread || id;
-  return best ? `${base}#all/${encodeURIComponent(best)}` : null;
+  // A bare message id in #all/ shows All Mail, but it is the last id left.
+  return id ? `${base}#all/${encodeURIComponent(id)}` : null;
 }
 
 /**

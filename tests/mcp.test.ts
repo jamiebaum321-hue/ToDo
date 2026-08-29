@@ -139,18 +139,36 @@ describe("tools", () => {
     expect((res as any).result.content[0].text).toContain("do not send those again");
   });
 
-  it("attaches a draft and surfaces it on the task", async () => {
+  it("attaches a draft and points it at the source thread", async () => {
     await call("create_task", {
       title: "Reply to Marta",
       bucket: "urgent_not_priority",
-      source: { provider: "gmail", externalId: "marta-1" },
+      source: { provider: "gmail", externalId: "marta-1", threadId: "t-marta", account: "j@w.com" },
     });
     const task = await prisma.task.findFirstOrThrow({ where: { userId: actor.user.id } });
 
     await call("attach_draft", { id: task.id, provider: "gmail", externalId: "draft-9", body: "Hi Marta…" });
     const draft = await prisma.draft.findFirstOrThrow({ where: { taskId: task.id } });
     expect(draft.body).toBe("Hi Marta…");
-    expect(draft.webUrl).toContain("compose=draft-9");
+    // A reply draft lives inside its conversation, so the button opens the
+    // thread — web and app alike. The old `#drafts?compose=<draft id>` link
+    // field-tested as opening an empty compose window.
+    expect(draft.webUrl).toContain("#all/t-marta");
+    expect(draft.mobileUrl).toBe("googlegmail:///cv=t-marta");
+  });
+
+  it("falls back to the drafts folder when the task has no thread id", async () => {
+    await call("create_task", {
+      title: "Reply to nobody in particular",
+      bucket: "urgent_not_priority",
+      source: { provider: "gmail", externalId: "loose-1" },
+    });
+    const task = await prisma.task.findFirstOrThrow({ where: { userId: actor.user.id, sourceExternalId: "loose-1" } });
+
+    await call("attach_draft", { id: task.id, provider: "gmail", externalId: "draft-2", body: "Hello…" });
+    const draft = await prisma.draft.findFirstOrThrow({ where: { taskId: task.id } });
+    expect(draft.webUrl).toContain("#drafts");
+    expect(draft.webUrl).not.toContain("compose=");
   });
 
   it("refuses a draft with nowhere to point", async () => {

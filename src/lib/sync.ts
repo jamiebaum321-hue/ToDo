@@ -102,6 +102,7 @@ function buildLinkRows(input: TaskInput): Prisma.TaskLinkCreateWithoutTaskInput[
       threadId: link.threadId ?? source?.threadId,
       account: link.account ?? source?.account,
       accountIndex: link.accountIndex ?? source?.accountIndex,
+      anchorItemId: source?.externalId,
       passcode: link.passcode,
       kind: link.kind === "draft" ? "draft" : link.kind === "calendar" ? "event" : "message",
       web: link.web,
@@ -131,12 +132,21 @@ function buildLinkRows(input: TaskInput): Prisma.TaskLinkCreateWithoutTaskInput[
 function buildDraftRow(input: TaskInput): Prisma.DraftCreateWithoutTaskInput | null {
   const d = input.draft;
   if (!d) return null;
+  // A draft the agent can neither show nor point at is a phantom — the
+  // thread/folder fallbacks below would happily give it a button, so the
+  // existence check comes first: some body, id, or URL, or no draft at all.
+  if (!d.body && !d.externalId && !d.url && !d.web && !d.desktop && !d.mobile) return null;
   const provider = normalizeProvider(d.provider ?? input.source?.provider);
   const target = deriveLinkTarget({
     provider,
     externalId: d.externalId,
     account: input.source?.account,
     accountIndex: input.source?.accountIndex,
+    // A reply draft lives inside the conversation it answers, so its links
+    // aim at that thread: the Gmail thread id for web + app, and the source
+    // message's Graph id for the Outlook app handoff.
+    threadId: input.source?.threadId,
+    anchorItemId: input.source?.externalId,
     kind: "draft",
     web: d.web ?? d.url,
     desktop: d.desktop,
@@ -173,6 +183,11 @@ function taskFields(input: TaskInput, runId: string | null, team: TeamMemberDTO[
     sourceProvider: normalizeProvider(source?.provider),
     sourceType: source?.type ?? null,
     sourceExternalId: source?.externalId ?? source?.messageId ?? null,
+    // Stored, not just baked into URLs: the serializers repair links at read
+    // time, and only real ids can do that — a #all/<id> URL cannot say
+    // whether its id is a thread or a message.
+    sourceMessageId: source?.messageId ?? null,
+    sourceThreadId: source?.threadId ?? null,
     sourceAccount: source?.account ?? null,
     sourceFrom: source?.from ?? null,
     sourceSubject: source?.subject ?? null,

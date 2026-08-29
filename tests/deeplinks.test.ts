@@ -20,10 +20,17 @@ describe("deriveLinkTarget", () => {
     expect(t.desktop ?? null).toBeNull();
   });
 
-  it("points Outlook drafts at the drafts folder, not the reading pane", () => {
-    const t = deriveLinkTarget({ provider: "outlook", externalId: "draft-1", kind: "draft" });
+  it("points Outlook drafts at the drafts folder on the web, and at the SOURCE thread in the app", () => {
+    // Field result: ms-outlook://emails/drafts opened the app on nothing.
+    // A reply draft sits inside the conversation it answers, so the app
+    // handoff opens that conversation — via the source message's id.
+    const t = deriveLinkTarget({ provider: "outlook", externalId: "draft-1", anchorItemId: "src-9", kind: "draft" });
     expect(t.web).toContain("/mail/drafts/id/");
-    expect(t.mobile).toContain("emails/drafts");
+    expect(t.mobile).toBe("ms-outlook://emails/message?restId=src-9");
+
+    // Without the source anchor there is no app link worth promising.
+    const bare = deriveLinkTarget({ provider: "outlook", externalId: "draft-1", kind: "draft" });
+    expect(bare.mobile ?? null).toBeNull();
   });
 
   it("keeps the connector's webLink byte-for-byte — it is the link that works", () => {
@@ -86,14 +93,20 @@ describe("deriveLinkTarget", () => {
     expect(t.web).toBe("https://mail.google.com/mail/#all/18c9f0");
   });
 
-  it("still prefers the RFC-822 id over everything, account and all", () => {
+  it("prefers the thread id — the link that lands ON the conversation", () => {
+    // Field result: the rfc822msgid search is durable but lands on a search
+    // RESULTS page ("did not go to the thread"); #all/<threadId> lands on
+    // the conversation itself. The search stays as the no-thread fallback.
     const t = deriveLinkTarget({
       provider: "gmail",
       messageId: "<abc@mail.gmail.com>",
       threadId: "18c9f0",
       account: "jamie@work.com",
     });
-    expect(t.web).toBe(
+    expect(t.web).toBe("https://mail.google.com/mail/u/?authuser=jamie%40work.com#all/18c9f0");
+
+    const noThread = deriveLinkTarget({ provider: "gmail", messageId: "<abc@mail.gmail.com>", account: "jamie@work.com" });
+    expect(noThread.web).toBe(
       "https://mail.google.com/mail/u/?authuser=jamie%40work.com#search/rfc822msgid:abc%40mail.gmail.com",
     );
   });
