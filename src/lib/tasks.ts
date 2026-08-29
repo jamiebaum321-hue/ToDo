@@ -1,6 +1,6 @@
 import type { Draft, Prisma, Task, TaskLink } from "@prisma/client";
 import { getBucket, type BucketKey } from "./buckets";
-import { normalizeMailLink } from "./mail-links";
+import { normalizeMailLink, outlookSchemeFromWeb } from "./mail-links";
 import { providerMeta } from "./providers";
 
 export const TASK_STATUSES = ["open", "completed", "dismissed", "snoozed", "delegated"] as const;
@@ -107,12 +107,24 @@ function serializeLink(link: TaskLink): TaskLinkDTO {
     providerLabel: meta.label,
     accent: meta.accent,
     // Rows stored before mail-links.ts existed carry the raw Graph webLink and
-    // Gmail's browser-local /u/<n>/ shapes. normalize is idempotent, so fixing
-    // them here costs nothing on clean rows and spares a data migration.
-    web: normalizeMailLink(link.webUrl),
-    desktop: link.desktopUrl,
-    mobile: link.mobileUrl,
+    // Gmail's browser-local /u/<n>/ shapes — and app slots that are empty or a
+    // copy of the web link, which is why phones were never offered the app.
+    // normalize and the scheme derivation are idempotent, so fixing them here
+    // costs nothing on clean rows and spares a data migration.
+    ...mailSlots(link.webUrl, link.desktopUrl, link.mobileUrl),
     isPrimary: link.isPrimary,
+  };
+}
+
+/** Legacy-safe link slots: web normalized, app slots backfilled with the scheme. */
+function mailSlots(webUrl: string | null, desktopUrl: string | null, mobileUrl: string | null) {
+  const web = normalizeMailLink(webUrl);
+  const scheme = outlookSchemeFromWeb(web);
+  const real = (slot: string | null) => (slot && slot !== webUrl && slot !== web ? slot : null);
+  return {
+    web,
+    desktop: real(desktopUrl) ?? scheme ?? desktopUrl,
+    mobile: real(mobileUrl) ?? scheme ?? mobileUrl,
   };
 }
 
@@ -206,9 +218,7 @@ export function serializeTaskForAgent(task: TaskWithRelations) {
       kind: l.kind,
       label: l.label,
       provider: l.provider,
-      web: normalizeMailLink(l.webUrl),
-      desktop: l.desktopUrl,
-      mobile: l.mobileUrl,
+      ...mailSlots(l.webUrl, l.desktopUrl, l.mobileUrl),
     })),
     completedAt: task.completedAt?.toISOString() ?? null,
     updatedAt: task.updatedAt.toISOString(),

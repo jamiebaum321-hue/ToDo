@@ -153,3 +153,22 @@ export function assertSafeMailLink(url: string, opts: { allowOutlookScheme?: boo
     );
   }
 }
+
+const OUTLOOK_DEEPLINK = /^https:\/\/(outlook\.[\w.]+)\/mail\/(deeplink\/read|drafts\/id)\/([^/?#]+)$/i;
+
+/**
+ * The ms-outlook:// handoff for a deeplink we already trust.
+ *
+ * Exists for rows written before this module did: they stored the https link
+ * in every slot (or nothing at all in the app slots), so phones were never
+ * offered the app. The id inside a deeplink is exactly the restId the mobile
+ * scheme wants, so the app link can be derived at read time — no migration,
+ * no waiting for the next sweep to rewrite the row.
+ */
+export function outlookSchemeFromWeb(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const m = url.match(OUTLOOK_DEEPLINK);
+  if (!m) return null;
+  const path = m[2].toLowerCase().startsWith("drafts") ? "emails/drafts" : "emails/message";
+  return `ms-outlook://${path}?restId=${m[3]}`;
+}
