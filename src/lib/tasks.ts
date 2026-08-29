@@ -1,6 +1,6 @@
 import type { Draft, Prisma, Task, TaskLink } from "@prisma/client";
 import { getBucket, type BucketKey } from "./buckets";
-import { normalizeMailLink, outlookSchemeFromWeb } from "./mail-links";
+import { isOutlookScheme, normalizeMailLink, outlookSchemeFromWeb } from "./mail-links";
 import { providerMeta } from "./providers";
 
 export const TASK_STATUSES = ["open", "completed", "dismissed", "snoozed", "delegated"] as const;
@@ -116,14 +116,20 @@ function serializeLink(link: TaskLink): TaskLinkDTO {
   };
 }
 
-/** Legacy-safe link slots: web normalized, app slots backfilled with the scheme. */
+/**
+ * Legacy-safe link slots: web normalized, the mobile slot backfilled with the
+ * app scheme, and the desktop slot never a scheme at all — new Outlook on
+ * Windows opens and then refuses `emails/message` links (field-confirmed), so
+ * a stored scheme there is a guaranteed dead end and gets dropped on the way
+ * out. An app slot that merely copies the web link carries no information.
+ */
 function mailSlots(webUrl: string | null, desktopUrl: string | null, mobileUrl: string | null) {
   const web = normalizeMailLink(webUrl);
   const scheme = outlookSchemeFromWeb(web);
   const real = (slot: string | null) => (slot && slot !== webUrl && slot !== web ? slot : null);
   return {
     web,
-    desktop: real(desktopUrl) ?? scheme ?? desktopUrl,
+    desktop: isOutlookScheme(desktopUrl) ? null : (real(desktopUrl) ?? desktopUrl),
     mobile: real(mobileUrl) ?? scheme ?? mobileUrl,
   };
 }
