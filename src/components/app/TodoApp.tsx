@@ -196,12 +196,16 @@ function Board() {
         </div>
       ) : null}
 
-      {/* Home is the board; a chip is a zoom. Keying on the filter remounts
-          this container, so the board fades into the bucket's list and back
-          instead of hard-cutting — and the chips above keep every bucket's
-          real count visible, just dimmed, so a glance never reads as
-          "everything else is empty". A search keeps whichever view is up:
-          on the board the matches stay sorted into their columns. */}
+      {/* Home is the board; a chip is a zoom. The stable wrapper below names
+          this region for the scoped view transition (see globals.css): only
+          what is inside it fades and glides when swapView runs, so the rail
+          and the chips stay perfectly still while the tasks move. Keying the
+          inner container on the filter remounts it, so the fallback path
+          still gets its fade — and the chips above keep every bucket's real
+          count visible, just dimmed, so a glance never reads as "everything
+          else is empty". A search keeps whichever view is up: on the board
+          the matches stay sorted into their columns. */}
+      <div style={{ viewTransitionName: "board-swap" } as React.CSSProperties}>
       <div key={`${filter ?? "all"}:${showDone ? "done" : "open"}:${query ? "q" : ""}`} className="fade-swap">
         {visible.length === 0 && total === 0 && !showDone ? (
           <FirstRunEmpty connected={(board?.connections ?? 0) > 0} hasEverSynced={Boolean(board?.lastRun)} />
@@ -218,7 +222,8 @@ function Board() {
         )}
       </div>
 
-      {/* Done toggle */}
+      {/* Done toggle — inside the named region so it rides the same motion
+          instead of jumping while the box above it glides. */}
       <div className="mt-8 flex justify-center">
         <button
           type="button"
@@ -228,6 +233,7 @@ function Board() {
         >
           {showDone ? "Back to your tasks" : "See what you cleared"}
         </button>
+      </div>
       </div>
 
       {selected ? (
