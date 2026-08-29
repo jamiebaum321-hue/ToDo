@@ -248,15 +248,6 @@ export function SettingsView({
           onChange={(v) => save({ theme: v })}
         />
         <Choice
-          label="Opens on"
-          value={settings.defaultView}
-          options={[
-            { value: "focus", label: "The list" },
-            { value: "board", label: "The board" },
-          ]}
-          onChange={(v) => save({ defaultView: v })}
-        />
-        <Choice
           label="Keep cleared tasks"
           value={String(settings.autoArchiveDays)}
           options={[

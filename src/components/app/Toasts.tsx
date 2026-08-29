@@ -2,6 +2,7 @@
 
 import { Undo2, X } from "lucide-react";
 import { useTodo } from "@/hooks/useTodo";
+import { Doodle } from "@/components/Doodle";
 
 /**
  * Anchored above the tab bar on mobile and bottom-left on desktop, so it never
@@ -26,6 +27,9 @@ export function Toasts() {
             color: toast.tone === "error" ? "#fff" : "var(--bg)",
           }}
         >
+          {toast.tone !== "error" ? (
+            <Doodle name="okay-hand" className="anim-pop shrink-0" style={{ width: 25, height: 26 }} />
+          ) : null}
           <span className="min-w-0 flex-1 truncate text-[14px] font-bold">{toast.message}</span>
           {toast.undo ? (
             <button

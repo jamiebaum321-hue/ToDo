@@ -335,6 +335,9 @@ describe("rows stored before mail-links.ts existed", () => {
 
     const gmail = dto.links.find((l) => l.label === "Legacy Gmail row");
     expect(gmail?.web).toBe("https://mail.google.com/mail/#all/18c9f0");
+    // And the phone gets the field-confirmed Gmail app scheme, derived from
+    // the thread id already sitting in the link.
+    expect(gmail?.mobile).toBe("googlegmail:///cv=18c9f0");
   });
 
   it("treats an app slot that just copies the web link as empty, and keeps a real one", async () => {
@@ -364,7 +367,7 @@ describe("rows stored before mail-links.ts existed", () => {
     expect(real?.mobile).toBe("ms-outlook://emails/message?restId=AAMkReal");
   });
 
-  it("leaves Gmail's mobile slot as the https link — app links want exactly that", async () => {
+  it("gives Gmail tasks the app scheme on mobile, https everywhere else", async () => {
     await syncTasks(
       userId,
       syncInput.parse({ tasks: [{ ...newsletter, source: { ...newsletter.source, threadId: "t9" } }] }),
@@ -373,7 +376,11 @@ describe("rows stored before mail-links.ts existed", () => {
     const task = await prisma.task.findFirstOrThrow({ where: { userId } });
     const dto = serializeTask(await prisma.task.findUniqueOrThrow({ where: { id: task.id }, include: taskInclude }));
     const link = dto.links.find((l) => l.provider === "gmail");
-    expect(link?.mobile).toBe(link?.web);
-    expect(link?.mobile).not.toContain("ms-outlook");
+    // Field-confirmed on a real phone: googlegmail:///cv= opens the app on
+    // the exact thread. The browser link stays the universal fallback.
+    expect(link?.mobile).toBe("googlegmail:///cv=t9");
+    // The fixture carries a Message-ID, so the browser link is the durable
+    // rfc822 search — the thread id still reached the app scheme regardless.
+    expect(link?.web).toContain("#search/rfc822msgid");
   });
 });

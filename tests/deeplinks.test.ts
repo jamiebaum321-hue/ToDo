@@ -103,7 +103,14 @@ describe("deriveLinkTarget", () => {
     expect(t.web).toBe("https://mail.google.com/mail/#all/18c9f0");
   });
 
-  it("keeps the https link for Gmail on mobile — app links handle it", () => {
+  it("hands Gmail mobile to the app when the thread id is known", () => {
+    // googlegmail:///cv= is undocumented but field-confirmed to open the app
+    // on the exact thread; the button falls back to the browser if not.
+    const t = deriveLinkTarget({ provider: "gmail", threadId: "18c9f0", account: "j@w.com" });
+    expect(t.mobile).toBe("googlegmail:///cv=18c9f0");
+  });
+
+  it("keeps the https link for Gmail on mobile when no thread id exists", () => {
     const t = deriveLinkTarget({ provider: "gmail", externalId: "18c9f0" });
     expect(t.mobile).toBe(t.web);
   });

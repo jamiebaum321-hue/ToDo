@@ -1,17 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Check,
-  ChevronDown,
-  Clock,
-  FolderInput,
-  Forward,
-  PenLine,
-  Pin,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Check, ChevronDown, Clock, FolderInput, Forward, Mail, PenLine, Pin, Trash2, X } from "lucide-react";
 import type { TaskDTO } from "@/lib/client/types";
 import type { LinkPreference } from "@/lib/deeplinks";
 import { relativeLabel } from "@/lib/time";
@@ -20,6 +10,7 @@ import { bucketVars, BUCKET_ICON, PROVIDER_ICON } from "./icons";
 import { OpenButton } from "./OpenButton";
 import { BUCKETS } from "@/lib/buckets";
 import type { TeamMemberDTO } from "@/lib/team";
+import { delegateMailto } from "@/lib/client/delegate";
 
 interface Props {
   task: TaskDTO;
@@ -299,25 +290,54 @@ export function TaskSheet({
           {menu === "delegate" ? (
             <MenuCard title="Hand it to">
               {/* Your team first — typing a name you already listed is busywork,
-                  and a name that matches the roster is one the agent knows. */}
+                  and a name that matches the roster is one the agent knows.
+                  Someone with an email on file gets the full hand-off: the
+                  task is marked delegated AND a ready-to-send email opens in
+                  the user's own mail client, thread link included. */}
               {team.length > 0 ? (
-                <div className="mb-2 flex flex-wrap gap-1.5 px-1">
-                  {team.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => {
-                        onDelegate(task, m.name);
-                        setMenu("none");
-                      }}
-                      className="rounded-full px-3 py-1.5 text-[13px] font-bold transition active:scale-95"
-                      style={{ background: "var(--tint-delegate)", color: "var(--accent-delegate)" }}
-                    >
-                      {m.name}
-                      <span className="ml-1.5 font-semibold opacity-70">{m.functionLabel}</span>
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div className="mb-2 flex flex-wrap gap-1.5 px-1">
+                    {team.map((m) => {
+                      const mailto = delegateMailto(task, m);
+                      const cls = "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[13px] font-bold transition active:scale-95";
+                      const sty = { background: "var(--tint-delegate)", color: "var(--accent-delegate)" } as const;
+                      return mailto ? (
+                        <a
+                          key={m.id}
+                          href={mailto}
+                          onClick={() => {
+                            onDelegate(task, m.name);
+                            setMenu("none");
+                          }}
+                          className={cls}
+                          style={sty}
+                        >
+                          <Mail className="size-[13px]" strokeWidth={2.6} />
+                          {m.name}
+                          <span className="ml-0.5 font-semibold opacity-70">{m.functionLabel}</span>
+                        </a>
+                      ) : (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => {
+                            onDelegate(task, m.name);
+                            setMenu("none");
+                          }}
+                          className={cls}
+                          style={sty}
+                        >
+                          {m.name}
+                          <span className="ml-0.5 font-semibold opacity-70">{m.functionLabel}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mb-2 px-1 text-[11.5px] font-semibold" style={{ color: "var(--text-3)" }}>
+                    An envelope means they have an email on file — choosing them also drafts the hand-off email for
+                    you, with the thread linked.
+                  </p>
+                </>
               ) : null}
               <form
                 onSubmit={(e) => {

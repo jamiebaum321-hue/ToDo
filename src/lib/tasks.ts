@@ -1,6 +1,6 @@
 import type { Draft, Prisma, Task, TaskLink } from "@prisma/client";
 import { getBucket, type BucketKey } from "./buckets";
-import { isOutlookScheme, normalizeMailLink, outlookSchemeFromWeb } from "./mail-links";
+import { gmailSchemeFromWeb, isOutlookScheme, normalizeMailLink, outlookSchemeFromWeb } from "./mail-links";
 import { providerMeta } from "./providers";
 
 export const TASK_STATUSES = ["open", "completed", "dismissed", "snoozed", "delegated"] as const;
@@ -125,7 +125,7 @@ function serializeLink(link: TaskLink): TaskLinkDTO {
  */
 function mailSlots(webUrl: string | null, desktopUrl: string | null, mobileUrl: string | null) {
   const web = normalizeMailLink(webUrl);
-  const scheme = outlookSchemeFromWeb(web);
+  const scheme = outlookSchemeFromWeb(web) ?? gmailSchemeFromWeb(web);
   const real = (slot: string | null) => (slot && slot !== webUrl && slot !== web ? slot : null);
   return {
     web,

@@ -39,41 +39,45 @@ const crisp = (t: number) => clamp01((t - 0.5) * CRISPNESS + 0.5);
 
 /** A high-resolution, re-sharpened master with the circular alpha intact. */
 async function buildMaster(size: number): Promise<Buffer> {
-  // Colour and alpha are resized separately on purpose. The source is
-  // transparent *black* outside the disc, and letting that bleed into the
-  // resample leaves a grey halo exactly on the circle's edge.
-  const [colour, alpha] = await Promise.all([
-    sharp(SOURCE)
-      .flatten({ background: CREAM_HEX })
-      // The master is 1263x1246 rather than square, so "contain" keeps the
-      // disc a circle where "fill" would stretch it a percent or so wide.
-      .resize(size, size, { kernel: "lanczos3", fit: "contain", background: CREAM_HEX })
-      .raw()
-      .toBuffer({ resolveWithObject: true }),
-    sharp(SOURCE)
-      .ensureAlpha()
-      .extractChannel(3)
-      // One channel here, so black is the transparent side of the alpha mask.
-      .resize(size, size, { kernel: "lanczos3", fit: "contain", background: "#000000" })
-      .raw()
-      .toBuffer({ resolveWithObject: true }),
-  ]);
+  // One RGBA resize with a fully transparent background. sharp premultiplies
+  // alpha for the resample, so transparent-black neighbours cannot bleed a
+  // halo into edge pixels — and the alpha plane stays the source's own.
+  //
+  // An earlier version resized colour and alpha in separate pipelines, on the
+  // theory that split channels avoided the halo. It did not survive contact
+  // with sharp's fixed operation order: extractChannel applies AFTER resize
+  // no matter where it appears in the chain, so the "alpha" that pipeline
+  // read back was a near-solid plane — which is exactly where the opaque
+  // cream square around the disc came from.
+  const { data, info } = await sharp(SOURCE)
+    .ensureAlpha()
+    .resize(size, size, { kernel: "lanczos3", fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
 
-  const { width, height, channels } = colour.info;
-  const out = Buffer.alloc(width * height * 4);
+  const out = Buffer.alloc(info.width * info.height * 4);
 
-  for (let p = 0, i = 0, o = 0; p < width * height; p += 1, i += channels, o += 4) {
-    const lum = 0.2126 * colour.data[i] + 0.7152 * colour.data[i + 1] + 0.0722 * colour.data[i + 2];
+  for (let i = 0; i < out.length; i += 4) {
+    const a = crisp(clamp01(data[i + 3] / 255));
+    if (a === 0) {
+      // Fully outside the disc. Cream under zero alpha, so a resampler that
+      // later peeks at the colour of transparent pixels finds no black.
+      out[i] = CREAM.r;
+      out[i + 1] = CREAM.g;
+      out[i + 2] = CREAM.b;
+      continue;
+    }
+
+    const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
     const coverage = crisp(clamp01((CREAM_LUM - lum) / (CREAM_LUM - INK_LUM)));
-    const a = crisp(clamp01(alpha.data[p] / 255));
 
-    out[o] = Math.round(CREAM.r + (INK.r - CREAM.r) * coverage);
-    out[o + 1] = Math.round(CREAM.g + (INK.g - CREAM.g) * coverage);
-    out[o + 2] = Math.round(CREAM.b + (INK.b - CREAM.b) * coverage);
-    out[o + 3] = Math.round(a * 255);
+    out[i] = Math.round(CREAM.r + (INK.r - CREAM.r) * coverage);
+    out[i + 1] = Math.round(CREAM.g + (INK.g - CREAM.g) * coverage);
+    out[i + 2] = Math.round(CREAM.b + (INK.b - CREAM.b) * coverage);
+    out[i + 3] = Math.round(a * 255);
   }
 
-  return sharp(out, { raw: { width, height, channels: 4 } }).png().toBuffer();
+  return sharp(out, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
 }
 
 /** The logo centred on a cream tile — what a launcher or a browser tab wants. */

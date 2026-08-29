@@ -1,5 +1,5 @@
 import { normalizeProvider, type ProviderKey } from "./providers";
-import { buildGmailWebUrl, isOutlookScheme, normalizeMailLink, outlookMobileLink, outlookWebLink, parseOutlookWebLink } from "./mail-links";
+import { buildGmailWebUrl, gmailMobileLink, isOutlookScheme, normalizeMailLink, outlookMobileLink, outlookWebLink, parseOutlookWebLink } from "./mail-links";
 
 /**
  * A single button's three destinations. Never all three, often only one —
@@ -118,11 +118,15 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
             kind,
           }) ?? undefined;
       }
-      // Gmail's mobile app handles mail.google.com through Android app links,
-      // so the https URL opens the app on the thread when it is installed.
-      // There is no documented iOS scheme for a specific thread — googlegmail://
-      // only composes — so https is genuinely the best mobile link that exists.
-      if (!out.mobile) out.mobile = out.web ?? undefined;
+      // googlegmail:///cv=<threadId> is undocumented but field-confirmed to
+      // open the Gmail app on the exact thread; the button falls back to the
+      // browser when no app answers. Without a thread id (an rfc822msgid
+      // search, say) the https link is the best mobile link that exists —
+      // Android app links hand it to the app anyway.
+      if (!out.mobile) {
+        const thread = clean(input.threadId);
+        out.mobile = thread ? gmailMobileLink(thread) : (out.web ?? undefined);
+      }
       break;
     }
     case "teams": {
