@@ -9,8 +9,9 @@ import { bucketVars, BUCKET_ICON } from "./icons";
 import { useTodo } from "@/hooks/useTodo";
 
 /**
- * Four columns on a wide screen, four stacked sections on a phone. The board is
- * for looking at the shape of the week; the focus list is for actually working.
+ * The home view: four columns on a wide screen, four stacked sections on a
+ * phone. The board shows the shape of the whole week; tapping a bucket chip
+ * above it zooms into that bucket as a plain list, and "All" zooms back out.
  */
 export function BucketBoard({ tasks, showReason }: { tasks: TaskDTO[]; showReason: boolean }) {
   const { select, act, clearBucket } = useTodo();
