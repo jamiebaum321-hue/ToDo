@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assertSafeMailLink,
+  outlookSchemeFromWeb,
   buildGmailWebUrl,
   gmailBase,
   normalizeMailLink,
@@ -116,5 +117,25 @@ describe("assertSafeMailLink: the three bad shapes are rejected by name", () => 
     ]) {
       expect(() => assertSafeMailLink(url)).not.toThrow();
     }
+  });
+});
+
+describe("outlookSchemeFromWeb: the app handoff, derived from a link we trust", () => {
+  it("turns a read deeplink into the mobile scheme, id untouched", () => {
+    expect(outlookSchemeFromWeb("https://outlook.office.com/mail/deeplink/read/AAMk-a_b%3D")).toBe(
+      "ms-outlook://emails/message?restId=AAMk-a_b%3D",
+    );
+  });
+
+  it("routes drafts to the drafts screen", () => {
+    expect(outlookSchemeFromWeb("https://outlook.office.com/mail/drafts/id/d-1")).toBe(
+      "ms-outlook://emails/drafts?restId=d-1",
+    );
+  });
+
+  it("derives nothing from links that are not Outlook deeplinks", () => {
+    expect(outlookSchemeFromWeb("https://mail.google.com/mail/#all/t1")).toBeNull();
+    expect(outlookSchemeFromWeb("https://outlook.office.com/calendar/item/abc")).toBeNull();
+    expect(outlookSchemeFromWeb(null)).toBeNull();
   });
 });

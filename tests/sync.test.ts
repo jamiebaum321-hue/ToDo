@@ -325,8 +325,51 @@ describe("rows stored before mail-links.ts existed", () => {
 
     const outlook = dto.links.find((l) => l.label === "Legacy Outlook row");
     expect(outlook?.web).toBe("https://outlook.office.com/mail/deeplink/read/AAMk-a_b%3D");
+    // The old rows stored nothing in the app slots, which is why phones were
+    // never offered the app. The scheme is derived from the fixed web link.
+    expect(outlook?.mobile).toBe("ms-outlook://emails/message?restId=AAMk-a_b%3D");
+    expect(outlook?.desktop).toBe("ms-outlook://emails/message?restId=AAMk-a_b%3D");
 
     const gmail = dto.links.find((l) => l.label === "Legacy Gmail row");
     expect(gmail?.web).toBe("https://mail.google.com/mail/#all/18c9f0");
+  });
+
+  it("treats an app slot that just copies the web link as empty, and keeps a real one", async () => {
+    await syncTasks(userId, syncInput.parse({ tasks: [newsletter] }), { source: "api", client: "Claude" });
+    const task = await prisma.task.findFirstOrThrow({ where: { userId } });
+
+    const dupe = "https://outlook.office365.com/owa/?ItemID=AAMk%2Bdupe%3D&exvsurl=1";
+    await prisma.taskLink.createMany({
+      data: [
+        // A sweep that pasted the webLink into every slot: no information there.
+        { taskId: task.id, kind: "source", label: "Duplicated slots", provider: "outlook", webUrl: dupe, desktopUrl: dupe, mobileUrl: dupe, position: 11 },
+        // A row with a genuinely distinct mobile link keeps it.
+        { taskId: task.id, kind: "source", label: "Real mobile", provider: "outlook", webUrl: "https://outlook.office.com/mail/deeplink/read/AAMkReal", mobileUrl: "ms-outlook://emails/message?restId=AAMkReal", position: 12 },
+      ],
+    });
+
+    const dto = serializeTask(
+      await prisma.task.findUniqueOrThrow({ where: { id: task.id }, include: taskInclude }),
+    );
+
+    const duped = dto.links.find((l) => l.label === "Duplicated slots");
+    expect(duped?.web).toBe("https://outlook.office.com/mail/deeplink/read/AAMk-dupe%3D");
+    expect(duped?.mobile).toBe("ms-outlook://emails/message?restId=AAMk-dupe%3D");
+
+    const real = dto.links.find((l) => l.label === "Real mobile");
+    expect(real?.mobile).toBe("ms-outlook://emails/message?restId=AAMkReal");
+  });
+
+  it("leaves Gmail's mobile slot as the https link — app links want exactly that", async () => {
+    await syncTasks(
+      userId,
+      syncInput.parse({ tasks: [{ ...newsletter, source: { ...newsletter.source, threadId: "t9" } }] }),
+      { source: "api", client: "Claude" },
+    );
+    const task = await prisma.task.findFirstOrThrow({ where: { userId } });
+    const dto = serializeTask(await prisma.task.findUniqueOrThrow({ where: { id: task.id }, include: taskInclude }));
+    const link = dto.links.find((l) => l.provider === "gmail");
+    expect(link?.mobile).toBe(link?.web);
+    expect(link?.mobile).not.toContain("ms-outlook");
   });
 });
