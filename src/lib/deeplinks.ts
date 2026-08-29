@@ -1,5 +1,5 @@
 import { normalizeProvider, type ProviderKey } from "./providers";
-import { buildGmailWebUrl, normalizeMailLink, outlookDeepLink, parseOutlookWebLink } from "./mail-links";
+import { buildGmailWebUrl, isOutlookScheme, normalizeMailLink, outlookMobileLink, outlookWebLink, parseOutlookWebLink } from "./mail-links";
 
 /**
  * A single button's three destinations. Never all three, often only one —
@@ -79,33 +79,26 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
 
   switch (provider) {
     case "outlook": {
-      // The agent is told to prefer the connector's canonical URL, which for
-      // Graph is the legacy `owa/?ItemID=...&exvsurl=1` webLink — a shape that
-      // strands people on the inbox. Rebuild it as the modern deeplink, and
-      // mine it for the item id so the app links exist even when the agent
-      // sent nothing but that URL.
+      // The connector's webLink is the browser link that field-tested as
+      // opening the exact thread, so it is kept byte-for-byte — and mined for
+      // the item id so the mobile app link exists even when that URL is all
+      // the agent sent. (An earlier version rewrote it into mail/deeplink/read
+      // and that shape did NOT resolve; normalizeMailLink now heals any rows
+      // it produced.)
       const parsed = out.web ? parseOutlookWebLink(out.web) : null;
       const itemId = id ?? parsed?.itemId;
-      if (parsed) out.web = outlookDeepLink(parsed.itemId, kind === "draft" ? "draft" : "message", parsed.host);
 
       if (!out.web && itemId) {
-        out.web = outlookDeepLink(itemId, kind === "draft" ? "draft" : "message");
+        out.web = outlookWebLink(itemId, kind === "draft" ? "draft" : "message");
       }
       if (!out.mobile && itemId) {
-        // Outlook mobile registers ms-outlook:// on iOS and Android; the restId
-        // must be the base64url form, which outlookDeepLink's ids already are.
-        out.mobile =
-          kind === "draft"
-            ? `ms-outlook://emails/drafts?restId=${encodeURIComponent(itemId)}`
-            : `ms-outlook://emails/message?restId=${encodeURIComponent(itemId)}`;
+        // Field-confirmed: opens the Outlook app on the message, iOS and Android.
+        out.mobile = outlookMobileLink(itemId, kind === "draft" ? "draft" : "message");
       }
-      if (!out.desktop) {
-        // New Outlook (Windows and Mac) claims ms-outlook:// too; classic
-        // Outlook ignores it. chooseUrl only sends a desktop there when the
-        // user asks for the app, and the button falls back to the web link
-        // when nothing opens — so this is an offer, never a dead default.
-        out.desktop = out.mobile ?? undefined;
-      }
+      // No desktop slot on purpose. New Outlook for Windows registers the
+      // scheme but answers emails/message with "this link isn't supported"
+      // (field-confirmed); classic Outlook ignores it silently. The browser,
+      // signed in, is the only desktop destination that works.
       break;
     }
     case "outlook_calendar": {
@@ -173,10 +166,16 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
 
   // The web slot is the one a browser will always open: no custom schemes in
   // it, ever, and any legacy shape an agent pasted in gets rewritten here so
-  // every caller stores corrected links rather than re-deriving them.
+  // every caller stores corrected links rather than re-deriving them. An
+  // ms-outlook scheme is mobile-only — desktop Outlook refuses it — so a
+  // misplaced one lands in the mobile slot, nowhere else.
   if (out.web && !isHttp(out.web)) {
-    if (!out.desktop) out.desktop = out.web;
+    if (!out.mobile) out.mobile = out.web;
     out.web = undefined;
+  }
+  if (isOutlookScheme(out.desktop)) {
+    if (!out.mobile) out.mobile = out.desktop;
+    out.desktop = undefined;
   }
   out.web = normalizeMailLink(out.web);
   if (isHttp(out.desktop)) out.desktop = normalizeMailLink(out.desktop);

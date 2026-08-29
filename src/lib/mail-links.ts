@@ -3,45 +3,57 @@
  *
  * Pure functions, no dependencies, safe to run server-side at write time — so
  * every client gets corrected links instead of each one re-deriving them.
- * Three link shapes have each burned a real user, and everything here exists
- * to kill them at the source:
  *
- * 1. Gmail `/u/<n>/`. The index numbers accounts by the order they were signed
- *    into one particular browser, so the same link opens a different mailbox on
- *    a different machine — and Gmail lands on that inbox instead of the thread,
- *    which looks exactly like the deep link being broken. `?authuser=<email>`
- *    resolves by identity and Gmail rewrites to the right index itself. This
- *    module never emits a numbered index.
+ * Every rule in here is field-tested, and one earlier rule was reversed by
+ * that testing, so the evidence is worth recording:
  *
- * 2. The raw Graph `webLink` (`.../owa/?ItemID=...&exvsurl=1`). A legacy OWA
- *    shape: the ItemID is plain base64 (`+`, `/`) and `exvsurl=1` invokes
- *    desktop-Outlook hand-off behaviour that strands people on the inbox. The
- *    ItemID is parsed out, converted base64 → base64url, and rebuilt as the
- *    modern deeplink. `exvsurl` cannot survive.
+ * 1. Gmail `/u/<n>/` is never emitted. The index numbers accounts by the order
+ *    they were signed into one particular browser, so the same link opens a
+ *    different mailbox on a different machine — and Gmail lands on that inbox
+ *    instead of the thread, which looks exactly like a broken deep link. The
+ *    reporting user's work mailbox sat at /u/3. `?authuser=<email>` resolves
+ *    the account by identity and Gmail rewrites to the right index itself.
+ *    Confirmed working on desktop Chrome against a real multi-account setup.
  *
- * 3. `ms-outlook://` leaking into slots where a browser will click it. The
- *    scheme is what the mobile apps (and new Outlook on desktop) register, but
- *    on a machine without a handler it does nothing at all, silently. It is
- *    opt-in per slot via `allowOutlookScheme`, never a default for the web.
+ * 2. The Graph `webLink` (`.../owa/?ItemID=...&exvsurl=1`) is the Outlook web
+ *    link that WORKS, and it is kept byte-for-byte. An earlier version of this
+ *    module rewrote it into `mail/deeplink/read/<base64url id>` on the theory
+ *    that the owa form was legacy — and the field test came back the other
+ *    way: the rebuilt deeplink did NOT resolve to the thread, while the raw
+ *    webLink did. So the connector's URL is the canonical browser link, the
+ *    deeplink/read shape is the banned one, and when only an id is known the
+ *    web link is built in the same owa shape Microsoft itself emits.
+ *
+ * 3. `ms-outlook://` is a MOBILE scheme. On iOS and Android it opens the
+ *    Outlook app on the exact message (field-confirmed). New Outlook on
+ *    Windows registers the scheme but answers `emails/message?restId=` with
+ *    "this link isn't supported" (field-confirmed), and classic Outlook
+ *    ignores it silently — so no desktop slot ever carries it, and the web
+ *    slot never carries any scheme at all.
  */
 
 const GMAIL_INDEXED = /^(https?:\/\/mail\.google\.com\/mail)\/u\/\d+\/?/i;
 const OUTLOOK_OWA = /^https?:\/\/(outlook\.(?:office365|office|live)\.com)\/owa\/?\?(.+)$/i;
+/** The shape that field-tested as NOT resolving; normalize rewrites it back. */
+const OUTLOOK_READ_DEEPLINK = /^https?:\/\/(outlook\.[\w.]+)\/mail\/deeplink\/read\/([^/?#]+)$/i;
 const OUTLOOK_SCHEME = /^ms-outlook:/i;
 
-/** `outlook.office365.com` and `outlook.office.com` are the same OWA; canonicalise. */
-function canonicalOutlookHost(host: string): string {
-  return /office/i.test(host) ? "outlook.office.com" : host.toLowerCase();
+export function isOutlookScheme(url: string | null | undefined): boolean {
+  return !!url && OUTLOOK_SCHEME.test(url);
 }
 
-/** Graph webLink ItemIDs are plain base64; every modern Outlook URL wants base64url. */
+/** Graph REST ids are base64url; the webLink's ItemID is plain base64. */
 export function toBase64Url(id: string): string {
   return id.replace(/\+/g, "-").replace(/\//g, "_");
 }
 
+function fromBase64Url(id: string): string {
+  return id.replace(/-/g, "+").replace(/_/g, "/");
+}
+
 /**
- * Pull the item id out of a Graph `webLink`, already converted to base64url.
- * Returns null for anything that is not that shape.
+ * Pull the item id out of a Graph `webLink`, converted to base64url — the form
+ * the ms-outlook:// mobile scheme wants as its restId.
  */
 export function parseOutlookWebLink(url: string): { host: string; itemId: string } | null {
   const m = url.match(OUTLOOK_OWA);
@@ -51,16 +63,47 @@ export function parseOutlookWebLink(url: string): { host: string; itemId: string
   // been seen as ItemID and itemid in the wild, so match case-insensitively.
   for (const [key, value] of new URLSearchParams(m[2])) {
     if (key.toLowerCase() === "itemid" && value) {
-      return { host: canonicalOutlookHost(m[1]), itemId: toBase64Url(value) };
+      return { host: m[1].toLowerCase(), itemId: toBase64Url(value) };
     }
   }
   return null;
 }
 
-/** The modern OWA deeplink for an item id (base64url, unencoded). */
-export function outlookDeepLink(itemId: string, kind: "message" | "draft" = "message", host = "outlook.office.com"): string {
-  const path = kind === "draft" ? "mail/drafts/id" : "mail/deeplink/read";
-  return `https://${host}/${path}/${encodeURIComponent(toBase64Url(itemId))}`;
+/**
+ * The Outlook browser link for an item id (base64url in, as Graph returns it).
+ *
+ * Deliberately the same owa shape Microsoft's own webLink uses, because that
+ * is the shape that field-tested as opening the exact thread. Drafts use the
+ * modern drafts path — there is no owa equivalent for a draft.
+ */
+export function outlookWebLink(itemId: string, kind: "message" | "draft" = "message", host = "outlook.office365.com"): string {
+  if (kind === "draft") {
+    return `https://outlook.office.com/mail/drafts/id/${encodeURIComponent(toBase64Url(itemId))}`;
+  }
+  return `https://${host}/owa/?ItemID=${encodeURIComponent(fromBase64Url(itemId))}&exvsurl=1&viewmodel=ReadMessageItem`;
+}
+
+/** The mobile app handoff. Field-confirmed to open the message on iOS/Android. */
+export function outlookMobileLink(itemId: string, kind: "message" | "draft" = "message"): string {
+  const path = kind === "draft" ? "emails/drafts" : "emails/message";
+  return `ms-outlook://${path}?restId=${encodeURIComponent(toBase64Url(itemId))}`;
+}
+
+/**
+ * The app handoff derived from a stored browser link — either the owa webLink
+ * or the retired deeplink shape older rows may still carry. Lets rows written
+ * before this module existed offer the app with no migration.
+ */
+export function outlookSchemeFromWeb(url: string | null | undefined): string | null {
+  if (!url) return null;
+
+  const owa = parseOutlookWebLink(url);
+  if (owa) return `ms-outlook://emails/message?restId=${encodeURIComponent(owa.itemId)}`;
+
+  const read = url.match(OUTLOOK_READ_DEEPLINK);
+  if (read) return `ms-outlook://emails/message?restId=${read[2]}`;
+
+  return null;
 }
 
 export interface GmailUrlInput {
@@ -110,13 +153,17 @@ export function buildGmailWebUrl(input: GmailUrlInput): string | null {
 /**
  * Rewrite the known-bad shapes, pass everything else through untouched.
  * Total and idempotent, so it is safe at write time AND on rows written
- * before this module existed.
+ * before the rules existed — in either direction: it also heals the rows the
+ * earlier version of this module rewrote into the deeplink shape.
  */
 export function normalizeMailLink<T extends string | null | undefined>(url: T): T {
   if (!url) return url;
 
-  const owa = parseOutlookWebLink(url);
-  if (owa) return outlookDeepLink(owa.itemId, "message", owa.host) as T;
+  const read = url.match(OUTLOOK_READ_DEEPLINK);
+  if (read) {
+    // decodeURIComponent because the deeplink builder stored the id encoded.
+    return outlookWebLink(decodeURIComponent(read[2])) as T;
+  }
 
   if (GMAIL_INDEXED.test(url)) {
     // The email cannot be recovered from the URL, so rewrite to the bare form:
@@ -130,11 +177,10 @@ export function normalizeMailLink<T extends string | null | undefined>(url: T): 
 }
 
 /**
- * The guard that stops these shapes recurring. Call it at the boundary where a
- * link is about to be persisted: it throws on all three bad shapes with an
- * error naming the fix, so a bad link from a connector payload, a legacy row,
- * or an LLM-generated task is rejected at write time rather than discovered by
- * a user clicking it.
+ * The guard that stops the bad shapes recurring. Call it at the boundary where
+ * a link is about to be persisted: it throws with an error naming the fix, so
+ * a bad link from a connector payload, a legacy row, or an LLM-generated task
+ * is rejected at write time rather than discovered by a user clicking it.
  */
 export function assertSafeMailLink(url: string, opts: { allowOutlookScheme?: boolean } = {}): void {
   if (GMAIL_INDEXED.test(url)) {
@@ -142,33 +188,14 @@ export function assertSafeMailLink(url: string, opts: { allowOutlookScheme?: boo
       `Unsafe Gmail link (browser-local /u/<n>/ index): ${url} — build it with ?authuser=<email> via gmailBase(), or run it through normalizeMailLink().`,
     );
   }
-  if (OUTLOOK_OWA.test(url) || /[?&]exvsurl=1/i.test(url)) {
+  if (OUTLOOK_READ_DEEPLINK.test(url)) {
     throw new Error(
-      `Unsafe Outlook link (raw Graph webLink / exvsurl): ${url} — parse the ItemID and rebuild with outlookDeepLink(), or run it through normalizeMailLink().`,
+      `Unsafe Outlook link (mail/deeplink/read — field-tested as not resolving to the thread): ${url} — keep the connector's webLink, or build the owa form with outlookWebLink(), or run it through normalizeMailLink().`,
     );
   }
   if (OUTLOOK_SCHEME.test(url) && !opts.allowOutlookScheme) {
     throw new Error(
-      `ms-outlook:// scheme in a slot a browser will open: ${url} — the scheme belongs only in the app slots, behind allowOutlookScheme.`,
+      `ms-outlook:// scheme in a slot a browser will open: ${url} — the scheme belongs only in the mobile slot, behind allowOutlookScheme.`,
     );
   }
-}
-
-const OUTLOOK_DEEPLINK = /^https:\/\/(outlook\.[\w.]+)\/mail\/(deeplink\/read|drafts\/id)\/([^/?#]+)$/i;
-
-/**
- * The ms-outlook:// handoff for a deeplink we already trust.
- *
- * Exists for rows written before this module did: they stored the https link
- * in every slot (or nothing at all in the app slots), so phones were never
- * offered the app. The id inside a deeplink is exactly the restId the mobile
- * scheme wants, so the app link can be derived at read time — no migration,
- * no waiting for the next sweep to rewrite the row.
- */
-export function outlookSchemeFromWeb(url: string | null | undefined): string | null {
-  if (!url) return null;
-  const m = url.match(OUTLOOK_DEEPLINK);
-  if (!m) return null;
-  const path = m[2].toLowerCase().startsWith("drafts") ? "emails/drafts" : "emails/message";
-  return `ms-outlook://${path}?restId=${m[3]}`;
 }

@@ -10,11 +10,14 @@ import {
 } from "@/lib/deeplinks";
 
 describe("deriveLinkTarget", () => {
-  it("builds Outlook web and mobile links from a Graph message id", () => {
+  it("builds the working owa web link and the mobile scheme from a Graph message id", () => {
     const t = deriveLinkTarget({ provider: "outlook", externalId: "AAMkAGI2TG93AAA=", kind: "email" });
-    expect(t.web).toBe("https://outlook.office.com/mail/deeplink/read/AAMkAGI2TG93AAA%3D");
+    expect(t.web).toBe("https://outlook.office365.com/owa/?ItemID=AAMkAGI2TG93AAA%3D&exvsurl=1&viewmodel=ReadMessageItem");
     expect(t.mobile).toBe("ms-outlook://emails/message?restId=AAMkAGI2TG93AAA%3D");
-    expect(t.desktop).toBe(t.mobile);
+    // Field result: new Outlook for Windows opens on the scheme and then says
+    // the link is not supported, and classic Outlook ignores it — so there is
+    // no desktop app destination at all, only the signed-in browser.
+    expect(t.desktop ?? null).toBeNull();
   });
 
   it("points Outlook drafts at the drafts folder, not the reading pane", () => {
@@ -23,33 +26,40 @@ describe("deriveLinkTarget", () => {
     expect(t.mobile).toContain("emails/drafts");
   });
 
-  it("keeps the connector's URL as the identity, but never its legacy shape", () => {
-    // The Graph webLink names the right message, so its id wins over the
-    // externalId — but the owa/?ItemID form strands people on the inbox, so
-    // the shape is rebuilt as the modern deeplink and exvsurl dies here.
+  it("keeps the connector's webLink byte-for-byte — it is the link that works", () => {
+    // Field result: the owa/?ItemID form opens the exact thread when signed
+    // in; the rebuilt mail/deeplink/read form does not. The URL Microsoft
+    // hands over is the URL the browser gets.
     const graphLink =
       "https://outlook.office365.com/owa/?ItemID=AAMkAGI2%2BTG93%2FAAA%3D&exvsurl=1&viewmodel=ReadMessageItem";
     const t = deriveLinkTarget({ provider: "outlook", externalId: "ignored", web: graphLink });
-    expect(t.web).toBe("https://outlook.office.com/mail/deeplink/read/AAMkAGI2-TG93_AAA%3D");
+    expect(t.web).toBe(graphLink);
   });
 
   it("mines the webLink for the id, so the phone gets the app even when that URL is all we got", () => {
     const graphLink = "https://outlook.office365.com/owa/?ItemID=AAMkAGI2%2BTG93%2FAAA%3D&exvsurl=1";
     const t = deriveLinkTarget({ provider: "outlook", web: graphLink });
     expect(t.mobile).toBe("ms-outlook://emails/message?restId=AAMkAGI2-TG93_AAA%3D");
-    expect(t.desktop).toBe(t.mobile);
+    expect(t.desktop ?? null).toBeNull();
   });
 
-  it("passes a URL that is already the modern shape straight through", () => {
-    const good = "https://outlook.office.com/mail/deeplink/read/AAMkAGI2TG93AAA%3D";
-    const t = deriveLinkTarget({ provider: "outlook", web: good });
-    expect(t.web).toBe(good);
+  it("rewrites the retired deeplink shape back to the working owa form", () => {
+    const retired = "https://outlook.office.com/mail/deeplink/read/AAMkAGI2TG93AAA%3D";
+    const t = deriveLinkTarget({ provider: "outlook", web: retired });
+    expect(t.web).toBe("https://outlook.office365.com/owa/?ItemID=AAMkAGI2TG93AAA%3D&exvsurl=1&viewmodel=ReadMessageItem");
   });
 
-  it("never stores a custom scheme where a browser will click it", () => {
+  it("never stores a custom scheme where a browser or a desktop will click it", () => {
     const t = deriveLinkTarget({ provider: "outlook", web: "ms-outlook://emails/message?restId=abc" });
     expect(t.web ?? null).toBeNull();
-    expect(t.desktop).toBe("ms-outlook://emails/message?restId=abc");
+    expect(t.desktop ?? null).toBeNull();
+    expect(t.mobile).toBe("ms-outlook://emails/message?restId=abc");
+  });
+
+  it("evicts an ms-outlook scheme from an agent-supplied desktop slot", () => {
+    const t = deriveLinkTarget({ provider: "outlook", externalId: "AAMkX", desktop: "ms-outlook://emails/message?restId=AAMkX" });
+    expect(t.desktop ?? null).toBeNull();
+    expect(t.mobile).toBe("ms-outlook://emails/message?restId=AAMkX");
   });
 
   it("uses the RFC-822 message id for Gmail, and never a browser-local index", () => {
@@ -203,23 +213,20 @@ describe("defaultLabel", () => {
 });
 
 describe("offering the other way to open it", () => {
+  // The real Outlook shape now: browser link, mobile scheme, no desktop app.
   const outlook = {
-    web: "https://outlook.office.com/mail/deeplink/read/abc",
-    desktop: "ms-outlook://emails/message?restId=abc",
+    web: "https://outlook.office365.com/owa/?ItemID=abc&exvsurl=1&viewmodel=ReadMessageItem",
+    desktop: null,
     mobile: "ms-outlook://emails/message?restId=abc",
   };
 
-  it("offers the browser when the app preference sends the button to the app", () => {
-    const chosen = chooseUrl(outlook, "windows", "app");
-    expect(alternateFor(outlook, chosen, "windows")).toEqual({ url: outlook.web, kind: "web" });
-  });
-
-  it("offers the app when the desktop default sends the button to the browser", () => {
-    // This pairing is the new-Outlook path: web by default, the ms-outlook
-    // handoff one deliberate tap away, stuck-detection behind it.
+  it("offers nothing on a desktop — there is no app destination that works", () => {
     const chosen = chooseUrl(outlook, "windows");
     expect(chosen).toBe(outlook.web);
-    expect(alternateFor(outlook, chosen, "windows")).toEqual({ url: outlook.desktop, kind: "app" });
+    expect(alternateFor(outlook, chosen, "windows")).toBeNull();
+    // Even asking for the app lands on the browser, because nothing else can
+    // open the message; the preference must not produce a dead button.
+    expect(chooseUrl(outlook, "windows", "app")).toBe(outlook.web);
   });
 
   it("keeps the phone on the app first, browser as the alternate", () => {

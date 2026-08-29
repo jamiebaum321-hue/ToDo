@@ -70,7 +70,7 @@ describe("syncTasks", () => {
     await sync([bobEmail]);
     const link = await prisma.taskLink.findFirst({ where: { task: { userId } } });
     expect(link?.label).toBe("Open in Outlook");
-    expect(link?.webUrl).toContain("outlook.office.com/mail/deeplink/read/");
+    expect(link?.webUrl).toContain("outlook.office365.com/owa/?ItemID=");
     expect(link?.mobileUrl).toContain("ms-outlook://");
     expect(link?.isPrimary).toBe(true);
   });
@@ -324,11 +324,14 @@ describe("rows stored before mail-links.ts existed", () => {
     );
 
     const outlook = dto.links.find((l) => l.label === "Legacy Outlook row");
-    expect(outlook?.web).toBe("https://outlook.office.com/mail/deeplink/read/AAMk-a_b%3D");
+    // The webLink is served exactly as stored — it is the browser link that
+    // field-tested as opening the thread; rewriting it is what broke it once.
+    expect(outlook?.web).toBe("https://outlook.office365.com/owa/?ItemID=AAMk%2Ba%2Fb%3D&exvsurl=1&viewmodel=ReadMessageItem");
     // The old rows stored nothing in the app slots, which is why phones were
-    // never offered the app. The scheme is derived from the fixed web link.
+    // never offered the app. The scheme is derived from the web link; the
+    // desktop stays empty because no desktop Outlook accepts the scheme.
     expect(outlook?.mobile).toBe("ms-outlook://emails/message?restId=AAMk-a_b%3D");
-    expect(outlook?.desktop).toBe("ms-outlook://emails/message?restId=AAMk-a_b%3D");
+    expect(outlook?.desktop ?? null).toBeNull();
 
     const gmail = dto.links.find((l) => l.label === "Legacy Gmail row");
     expect(gmail?.web).toBe("https://mail.google.com/mail/#all/18c9f0");
@@ -353,10 +356,11 @@ describe("rows stored before mail-links.ts existed", () => {
     );
 
     const duped = dto.links.find((l) => l.label === "Duplicated slots");
-    expect(duped?.web).toBe("https://outlook.office.com/mail/deeplink/read/AAMk-dupe%3D");
+    expect(duped?.web).toBe(dupe);
     expect(duped?.mobile).toBe("ms-outlook://emails/message?restId=AAMk-dupe%3D");
 
     const real = dto.links.find((l) => l.label === "Real mobile");
+    expect(real?.web).toBe("https://outlook.office365.com/owa/?ItemID=AAMkReal&exvsurl=1&viewmodel=ReadMessageItem");
     expect(real?.mobile).toBe("ms-outlook://emails/message?restId=AAMkReal");
   });
 

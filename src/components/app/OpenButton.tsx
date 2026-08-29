@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUpRight, ExternalLink, Loader2 } from "lucide-react";
 import { alternateFor, chooseUrl, fallbackFor, type LinkPreference, type LinkTarget } from "@/lib/deeplinks";
 import { usePlatform } from "@/hooks/usePlatform";
@@ -68,14 +68,42 @@ export function OpenButton({
       setState("opening");
       window.location.href = href;
 
+      // The page going hidden IS the success signal: the app took over. It has
+      // to cancel the timer, because iOS holds the page visible under its
+      // "Open in Outlook?" dialog for longer than any sensible timeout — which
+      // made the "nothing opened" offer appear on taps that were about to
+      // succeed, and linger after they had.
       if (timer.current) clearTimeout(timer.current);
+      const settle = (next: "idle" | "stuck") => {
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = null;
+        document.removeEventListener("visibilitychange", onHidden);
+        window.removeEventListener("pagehide", onHidden);
+        setState(next);
+      };
+      const onHidden = () => {
+        if (document.visibilityState === "hidden") settle("idle");
+      };
+      document.addEventListener("visibilitychange", onHidden);
+      window.addEventListener("pagehide", onHidden);
+
       timer.current = setTimeout(() => {
-        // Still visible means the handoff did not happen — no app registered.
-        setState(document.visibilityState === "visible" && webFallback ? "stuck" : "idle");
-      }, 1400);
+        // Still visible after this long means no app answered the scheme.
+        settle(document.visibilityState === "visible" && webFallback ? "stuck" : "idle");
+      }, 2600);
     },
     [onOpened, webFallback],
   );
+
+  // Belt and braces: coming back to a tab that successfully handed off should
+  // never show a stale "nothing opened" offer.
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === "hidden") setState((s) => (s === "stuck" ? "idle" : s));
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, []);
 
   if (!url) return null;
 

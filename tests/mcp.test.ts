@@ -120,7 +120,7 @@ describe("tools", () => {
     });
     const list = toolPayload(await call("list_tasks"));
     expect(list.tasks).toHaveLength(1);
-    expect(list.tasks[0].links[0].web).toContain("outlook.office.com");
+    expect(list.tasks[0].links[0].web).toContain("outlook.office365.com/owa/?ItemID=");
   });
 
   it("tells the agent exactly why it refused a task", async () => {
