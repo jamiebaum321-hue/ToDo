@@ -165,11 +165,13 @@ export function PageShell({
       <SideNav counts={counts} />
       <main className={cn("lg:pl-[236px]")}>
         {/* The frame breathes with the view: the board needs the full width, a
-            filtered list reads better narrow. Animating max-width keeps the
-            board→list swap feeling like one motion instead of a layout jump. */}
+            filtered list reads better narrow. The width itself changes in one
+            step on purpose — transitioning max-width rewraps every card
+            mid-flight. The softness comes from the view-transition crossfade
+            (swapView in TodoApp) that this change rides under. */}
         <div
           className={cn(
-            "mx-auto w-full px-4 pb-28 pt-4 transition-[max-width] duration-300 motion-reduce:transition-none sm:px-6 lg:pb-14 lg:pt-8",
+            "mx-auto w-full px-4 pb-28 pt-4 sm:px-6 lg:pb-14 lg:pt-8",
             wide ? "max-w-[1180px]" : "max-w-[720px]",
           )}
         >
