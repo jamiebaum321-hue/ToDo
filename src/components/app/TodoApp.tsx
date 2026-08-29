@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { TodoProvider, useTodo } from "@/hooks/useTodo";
 import { MobileHeader, PageShell } from "./Shell";
 import { TaskList, EmptyState } from "./TaskList";
+import { BucketBoard } from "./BucketBoard";
 import { TaskSheet } from "./TaskSheet";
 import { Toasts } from "./Toasts";
 import { QuickAdd } from "./QuickAdd";
@@ -64,8 +65,14 @@ function Board() {
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 
+  // There is no view toggle: the view follows the chips. "All" is the board —
+  // the shape of the whole week — and narrowing to one bucket is a list,
+  // because a single column of columns is just a list wearing a costume.
+  // Cleared items read as a flat list too; done work has no pipeline.
+  const boardView = filter === null && !showDone;
+
   return (
-    <PageShell counts={counts}>
+    <PageShell counts={counts} wide={boardView}>
       <MobileHeader
         subtitle={total > 0 ? `${total} waiting · ${today}` : today}
         right={
@@ -168,10 +175,12 @@ function Board() {
         </div>
       ) : null}
 
-      {/* The list. Keyed by the filter so narrowing to one bucket swaps the
-          sections in with a fade instead of a hard cut — and the chips above
-          keep every bucket's real count visible, just dimmed, so a glance
-          never reads as "everything else is empty". */}
+      {/* Home is the board; a chip is a zoom. Keying on the filter remounts
+          this container, so the board fades into the bucket's list and back
+          instead of hard-cutting — and the chips above keep every bucket's
+          real count visible, just dimmed, so a glance never reads as
+          "everything else is empty". A search keeps whichever view is up:
+          on the board the matches stay sorted into their columns. */}
       <div key={`${filter ?? "all"}:${showDone ? "done" : "open"}:${query ? "q" : ""}`} className="fade-swap">
         {visible.length === 0 && total === 0 && !showDone ? (
           <FirstRunEmpty connected={(board?.connections ?? 0) > 0} hasEverSynced={Boolean(board?.lastRun)} />
@@ -181,6 +190,8 @@ function Board() {
             title={query ? "No match" : showDone ? "Nothing cleared yet" : "This one is empty"}
             body={query ? "Try a different word." : showDone ? "Things you finish will collect here." : "Nothing in this bucket right now."}
           />
+        ) : boardView ? (
+          <BucketBoard tasks={visible} showReason={settings?.showReasons ?? true} />
         ) : (
           <TaskList tasks={visible} showReason={settings?.showReasons ?? true} />
         )}
@@ -194,7 +205,7 @@ function Board() {
           className="rounded-full px-4 py-2 text-[13px] font-bold transition"
           style={{ background: "var(--bg-alt)", color: "var(--text-3)" }}
         >
-          {showDone ? "Back to the list" : "See what you cleared"}
+          {showDone ? "Back to your tasks" : "See what you cleared"}
         </button>
       </div>
 

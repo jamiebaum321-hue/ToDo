@@ -164,7 +164,15 @@ export function PageShell({
     <div className="min-h-dvh" style={{ background: "var(--bg)" }}>
       <SideNav counts={counts} />
       <main className={cn("lg:pl-[236px]")}>
-        <div className={cn("mx-auto w-full px-4 pb-28 pt-4 sm:px-6 lg:pb-14 lg:pt-8", wide ? "max-w-[1180px]" : "max-w-[720px]")}>
+        {/* The frame breathes with the view: the board needs the full width, a
+            filtered list reads better narrow. Animating max-width keeps the
+            board→list swap feeling like one motion instead of a layout jump. */}
+        <div
+          className={cn(
+            "mx-auto w-full px-4 pb-28 pt-4 transition-[max-width] duration-300 motion-reduce:transition-none sm:px-6 lg:pb-14 lg:pt-8",
+            wide ? "max-w-[1180px]" : "max-w-[720px]",
+          )}
+        >
           {children}
         </div>
       </main>
