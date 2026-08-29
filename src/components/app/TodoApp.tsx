@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Columns3, Plus, RefreshCw, Rows3, Search, Sparkles, X } from "lucide-react";
+import { Plus, RefreshCw, Search, Sparkles, X } from "lucide-react";
 import type { BoardPayload } from "@/lib/client/types";
 import { BUCKETS } from "@/lib/buckets";
 import { relativeLabel } from "@/lib/time";
@@ -11,7 +11,6 @@ import { cn } from "@/lib/utils";
 import { TodoProvider, useTodo } from "@/hooks/useTodo";
 import { MobileHeader, PageShell } from "./Shell";
 import { TaskList, EmptyState } from "./TaskList";
-import { BucketBoard } from "./BucketBoard";
 import { TaskSheet } from "./TaskSheet";
 import { Toasts } from "./Toasts";
 import { QuickAdd } from "./QuickAdd";
@@ -33,13 +32,10 @@ export function TodoApp({ initial }: { initial: BoardPayload }) {
   );
 }
 
-type View = "focus" | "board";
-
 function Board() {
   const { board, tasks, counts, selected, select, act, removeTask, refresh, loading } = useTodo();
   const params = useSearchParams();
 
-  const [view, setView] = useState<View>((board?.settings.defaultView as View) ?? "focus");
   const [filter, setFilter] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
@@ -69,7 +65,7 @@ function Board() {
   const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 
   return (
-    <PageShell counts={counts} wide={view === "board"}>
+    <PageShell counts={counts}>
       <MobileHeader
         subtitle={total > 0 ? `${total} waiting · ${today}` : today}
         right={
@@ -115,7 +111,7 @@ function Board() {
       {/* Controls */}
       <div className="mb-4 flex items-center gap-2">
         <div className="no-scrollbar -mx-1 flex flex-1 gap-2 overflow-x-auto px-1 py-0.5">
-          <Chip active={filter === null} onClick={() => setFilter(null)} count={total}>
+          <Chip active={filter === null} dimmed={filter !== null} onClick={() => setFilter(null)} count={total}>
             All
           </Chip>
           {BUCKETS.map((b) => {
@@ -125,6 +121,7 @@ function Board() {
               <Chip
                 key={b.key}
                 active={filter === b.key}
+                dimmed={filter !== null && filter !== b.key}
                 onClick={() => setFilter(filter === b.key ? null : b.key)}
                 count={counts[b.key] ?? 0}
                 accent={vars.accent}
@@ -150,7 +147,6 @@ function Board() {
           <Search className="size-4" strokeWidth={2.6} />
         </button>
 
-        <ViewToggle value={view} onChange={setView} />
       </div>
 
       {searching ? (
@@ -172,20 +168,23 @@ function Board() {
         </div>
       ) : null}
 
-      {/* The list */}
-      {visible.length === 0 && total === 0 && !showDone ? (
-        <FirstRunEmpty connected={(board?.connections ?? 0) > 0} hasEverSynced={Boolean(board?.lastRun)} />
-      ) : visible.length === 0 ? (
-        <EmptyState
-          doodle={query ? "search" : "my-tasks-2"}
-          title={query ? "No match" : showDone ? "Nothing cleared yet" : "This one is empty"}
-          body={query ? "Try a different word." : showDone ? "Things you finish will collect here." : "Nothing in this bucket right now."}
-        />
-      ) : view === "board" && !showDone ? (
-        <BucketBoard tasks={visible} showReason={settings?.showReasons ?? true} />
-      ) : (
-        <TaskList tasks={visible} showReason={settings?.showReasons ?? true} />
-      )}
+      {/* The list. Keyed by the filter so narrowing to one bucket swaps the
+          sections in with a fade instead of a hard cut — and the chips above
+          keep every bucket's real count visible, just dimmed, so a glance
+          never reads as "everything else is empty". */}
+      <div key={`${filter ?? "all"}:${showDone ? "done" : "open"}:${query ? "q" : ""}`} className="fade-swap">
+        {visible.length === 0 && total === 0 && !showDone ? (
+          <FirstRunEmpty connected={(board?.connections ?? 0) > 0} hasEverSynced={Boolean(board?.lastRun)} />
+        ) : visible.length === 0 ? (
+          <EmptyState
+            doodle={query ? "search" : "my-tasks-2"}
+            title={query ? "No match" : showDone ? "Nothing cleared yet" : "This one is empty"}
+            body={query ? "Try a different word." : showDone ? "Things you finish will collect here." : "Nothing in this bucket right now."}
+          />
+        ) : (
+          <TaskList tasks={visible} showReason={settings?.showReasons ?? true} />
+        )}
+      </div>
 
       {/* Done toggle */}
       <div className="mt-8 flex justify-center">
@@ -223,6 +222,7 @@ function Board() {
 function Chip({
   children,
   active,
+  dimmed,
   onClick,
   count,
   accent,
@@ -231,6 +231,8 @@ function Chip({
 }: {
   children: React.ReactNode;
   active: boolean;
+  /** A filter is on and it is not this one. Fade, but keep the count readable. */
+  dimmed?: boolean;
   onClick: () => void;
   count: number;
   accent?: string;
@@ -241,11 +243,12 @@ function Chip({
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-2 text-[13px] font-extrabold transition active:scale-95"
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-2 text-[13px] font-extrabold transition-all duration-300 active:scale-95"
       style={{
         background: active ? (tint ?? "var(--text)") : "transparent",
         color: active ? (accent ?? "var(--bg)") : "var(--text-3)",
         border: `1.5px solid ${active ? (accent ?? "var(--text)") : "var(--line)"}`,
+        opacity: dimmed ? 0.5 : 1,
       }}
     >
       {icon}
@@ -298,50 +301,6 @@ function LastRunStrip({
 
 /** Before the first sync there is nothing to show, so show the way in instead. */
 /**
- * List or board, said out loud.
- *
- * This used to be one unlabelled icon that swapped between two glyphs, which
- * meant the board — the whole four-bucket pipeline — read as if it did not
- * exist. Two named options, and the one you are on is obvious.
- */
-function ViewToggle({ value, onChange }: { value: View; onChange: (v: View) => void }) {
-  const options: { key: View; label: string; icon: typeof Rows3 }[] = [
-    { key: "focus", label: "List", icon: Rows3 },
-    { key: "board", label: "Board", icon: Columns3 },
-  ];
-
-  return (
-    <div
-      className="hidden shrink-0 items-center gap-0.5 rounded-xl p-1 sm:flex"
-      style={{ background: "var(--bg-alt)", border: "1px solid var(--line)" }}
-      role="group"
-      aria-label="How to lay the list out"
-    >
-      {options.map((o) => {
-        const active = value === o.key;
-        return (
-          <button
-            key={o.key}
-            type="button"
-            onClick={() => onChange(o.key)}
-            aria-pressed={active}
-            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-bold transition"
-            style={{
-              background: active ? "var(--card)" : "transparent",
-              color: active ? "var(--text)" : "var(--text-3)",
-              boxShadow: active ? "var(--shadow-card)" : undefined,
-            }}
-          >
-            <o.icon className="size-[15px]" strokeWidth={2.6} />
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/**
  * Three genuinely different empty lists, and telling them apart matters: being
  * told to go and connect an assistant you connected a minute ago reads as the
  * app not having noticed.
@@ -362,13 +321,22 @@ function FirstRunEmpty({ connected, hasEverSynced }: { connected: boolean; hasEv
           ? "Your assistant can reach this list. Ask it to sweep your mail and calendar now, or set the morning run and it will fill this in by itself."
           : "Connect Claude or ChatGPT and it will read your mail, calendar and chat, then fill this in every morning with what actually needs you."}
       </p>
-      <Link
-        href="/connect"
-        className="mt-6 inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-[15px] font-extrabold transition active:scale-[0.98]"
-        style={{ background: "var(--text)", color: "var(--bg)" }}
-      >
-        {connected ? "Set the morning run" : "Connect your assistant"}
-      </Link>
+      <div className="mt-6 flex items-center justify-center gap-3">
+        {/* The squiggle arrow from the brand set, pointing at the one thing
+            worth doing on an empty first run. */}
+        <Doodle
+          name="over-here"
+          className="anim-wave hidden sm:block"
+          style={{ width: 84, height: 46, color: "var(--text-3)" }}
+        />
+        <Link
+          href="/connect"
+          className="inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-[15px] font-extrabold transition active:scale-[0.98]"
+          style={{ background: "var(--text)", color: "var(--bg)" }}
+        >
+          {connected ? "Set the morning run" : "Connect your assistant"}
+        </Link>
+      </div>
     </div>
   );
 }

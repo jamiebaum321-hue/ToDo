@@ -80,7 +80,7 @@ export function SideNav({ counts }: { counts?: Record<string, number> }) {
       style={{ background: "var(--bg-alt)", borderColor: "var(--line)" }}
     >
       <Link href="/" className="flex flex-col items-start gap-3 px-2">
-        <Logo size={76} priority />
+        <Logo size={92} priority />
         <div>
           <p className="text-[22px] font-extrabold leading-none tracking-tight" style={{ color: "var(--text)" }}>
             ToDo
@@ -177,7 +177,7 @@ export function PageShell({
 export function MobileHeader({ subtitle, right }: { subtitle?: string; right?: React.ReactNode }) {
   return (
     <header className="mb-4 flex items-center gap-3 lg:hidden">
-      <Logo size={52} priority />
+      <Logo size={62} priority />
       <div className="min-w-0 flex-1">
         <p className="text-[21px] font-extrabold leading-none tracking-tight" style={{ color: "var(--text)" }}>
           ToDo

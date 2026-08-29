@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import { Sparkles } from "lucide-react";
 import type { TaskDTO } from "@/lib/client/types";
 import { BUCKETS } from "@/lib/buckets";
-import { Logo } from "@/components/Logo";
 import { Doodle, type DoodleName } from "@/components/Doodle";
 import { TaskCard } from "./TaskCard";
 import { bucketVars, BUCKET_ICON } from "./icons";
@@ -74,7 +73,16 @@ export function EmptyState({
       {doodle ? (
         <Doodle name={doodle} size={84} style={{ color: "var(--text-3)" }} />
       ) : (
-        <Logo size={92} className="opacity-90" />
+        /* All clear is the app doing its job — it gets the confetti tick,
+           with the stars twinkling behind. Both die under reduced-motion. */
+        <span className="relative inline-block">
+          <Doodle
+            name="stars"
+            className="anim-twinkle absolute -left-14 -top-4"
+            style={{ width: 52, height: 56, color: "var(--accent-quick)" }}
+          />
+          <Doodle name="congrats" className="anim-pop" style={{ width: 108, height: 113, color: "var(--text-2)" }} />
+        </span>
       )}
       <h3 className="mt-5 text-[19px] font-extrabold" style={{ color: "var(--text)" }}>
         {title}

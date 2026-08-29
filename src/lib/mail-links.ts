@@ -130,6 +130,28 @@ export function gmailBase(account?: string | null): string {
       "https://mail.google.com/mail/";
 }
 
+/**
+ * The Gmail app's conversation-view scheme. Undocumented by Google, but
+ * field-confirmed on a real phone to open the app on the exact thread — and
+ * the button behind it falls back to the browser if nothing answers, so the
+ * worst case is what happened before this existed.
+ */
+export function gmailMobileLink(threadId: string): string {
+  return `googlegmail:///cv=${encodeURIComponent(threadId)}`;
+}
+
+const GMAIL_THREAD_WEB = /mail\.google\.com\/mail\/[^#]*#(?:all|inbox)\/([^/?&#]+)/i;
+
+/**
+ * The app handoff derived from a stored browser link, for rows written before
+ * the scheme existed. Only #all/<threadId> links qualify — a rfc822msgid
+ * search has no thread id to give the app.
+ */
+export function gmailSchemeFromWeb(url: string | null | undefined): string | null {
+  const m = url?.match(GMAIL_THREAD_WEB);
+  return m ? gmailMobileLink(decodeURIComponent(m[1])) : null;
+}
+
 export function buildGmailWebUrl(input: GmailUrlInput): string | null {
   const base = gmailBase(input.account);
   const mid = input.messageId?.trim();

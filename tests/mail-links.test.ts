@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   assertSafeMailLink,
+  gmailMobileLink,
+  gmailSchemeFromWeb,
   buildGmailWebUrl,
   gmailBase,
   isOutlookScheme,
@@ -47,6 +49,20 @@ describe("gmail: resolve the mailbox by identity, never by index", () => {
     expect(normalizeMailLink("https://mail.google.com/mail/u/3/#all/18c9f0")).toBe(
       "https://mail.google.com/mail/#all/18c9f0",
     );
+  });
+
+  it("builds the field-confirmed Gmail app scheme from a thread id", () => {
+    expect(gmailMobileLink("18c9f0")).toBe("googlegmail:///cv=18c9f0");
+  });
+
+  it("derives the app scheme from a stored thread link, and only from one", () => {
+    expect(gmailSchemeFromWeb("https://mail.google.com/mail/u/?authuser=j%40w.com#all/18c9f0")).toBe(
+      "googlegmail:///cv=18c9f0",
+    );
+    expect(gmailSchemeFromWeb("https://mail.google.com/mail/#all/18c9f0")).toBe("googlegmail:///cv=18c9f0");
+    // A search link has no thread id to hand the app.
+    expect(gmailSchemeFromWeb("https://mail.google.com/mail/#search/rfc822msgid:a%40b.c")).toBeNull();
+    expect(gmailSchemeFromWeb(null)).toBeNull();
   });
 
   it("leaves the authuser form alone — that one is correct", () => {

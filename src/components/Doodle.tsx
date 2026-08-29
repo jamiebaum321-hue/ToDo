@@ -19,7 +19,15 @@ export type DoodleName =
   | "search"
   | "profile"
   | "settings"
-  | "mascot";
+  | "mascot"
+  // Flairs: celebration and pointing accents, aspect preserved, motion-ready.
+  | "stars"
+  | "okay-hand"
+  | "congrats"
+  | "over-here"
+  | "flow";
+
+const FLAIR_NAMES = new Set(["stars", "okay-hand", "congrats", "over-here", "flow"]);
 
 /**
  * Below ~26px the busier drawings (the clipboard, the mascot's face) collapse
@@ -29,6 +37,7 @@ export type DoodleName =
  */
 function assetFor(name: DoodleName, size: number) {
   if (name === "mascot") return "/brand/doodles/mascot.png";
+  if (FLAIR_NAMES.has(name)) return `/brand/doodles/flair-${name}.png`;
   return `/brand/doodles/${name}${size <= 42 ? "-128" : ""}.png`;
 }
 

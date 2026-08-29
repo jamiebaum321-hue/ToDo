@@ -27,6 +27,12 @@ const OUT = join(ROOT, "public/brand/doodles");
 const ICONS = ["today", "my-tasks", "my-tasks-2", "calendar", "projects", "search", "profile", "settings"] as const;
 /** The full-body mascot, used large and pale behind the landing headline. */
 const MASCOT = "landing";
+/**
+ * Decorative flairs: celebration and pointing art used as motion accents, not
+ * as icons. Aspect is preserved — squashing a 3:1 flourish into a square just
+ * wastes most of the canvas the CSS mask has to stretch over.
+ */
+const FLAIRS = ["stars", "okay-hand", "congrats", "over-here", "flow"] as const;
 
 /**
  * Paper is not pure white — `my-tasks.png` is drawn on #F8F8F8, which would
@@ -81,6 +87,15 @@ async function main() {
         .toFile(join(OUT, file));
       written.push(`${file} ${(info.size / 1024).toFixed(0)}kb`);
     }
+  }
+
+  for (const name of FLAIRS) {
+    const info = await sharp(await toMask(join(SRC, `${name}.png`)))
+      .trim({ threshold: 8 })
+      .resize({ width: 720, withoutEnlargement: true })
+      .png({ palette: true, effort: 10 })
+      .toFile(join(OUT, `flair-${name}.png`));
+    written.push(`flair-${name}.png ${(info.size / 1024).toFixed(0)}kb`);
   }
 
   const info = await sharp(await toMask(join(SRC, `${MASCOT}.png`)))

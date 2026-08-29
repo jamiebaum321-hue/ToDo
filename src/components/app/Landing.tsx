@@ -10,7 +10,7 @@ export function Landing({ signupsOpen }: { signupsOpen: boolean }) {
   return (
     <div className="min-h-dvh" style={{ background: "var(--bg)" }}>
       <header className="mx-auto flex max-w-[1080px] items-center gap-3 px-5 py-6">
-        <Logo size={44} priority />
+        <Logo size={52} priority />
         <span className="text-[19px] font-extrabold tracking-tight" style={{ color: "var(--text)" }}>
           ToDo
         </span>
@@ -116,7 +116,15 @@ export function Landing({ signupsOpen }: { signupsOpen: boolean }) {
       </section>
 
       {/* --- the loop ----------------------------------------------------- */}
-      <section className="mx-auto max-w-[1080px] px-5 py-20">
+      <section className="relative mx-auto max-w-[1080px] px-5 py-20">
+        {/* The flow flourish drifts beside the heading — same wash tone as the
+            hero mascot, so it decorates without competing with the words. */}
+        <Doodle
+          name="flow"
+          className="anim-float pointer-events-none absolute right-5 top-14 hidden md:block"
+          aria-hidden
+          style={{ width: 380, height: 68, color: "var(--wash)" }}
+        />
         <h2 className="max-w-[20ch] text-[30px] font-extrabold leading-tight tracking-tight sm:text-[38px]" style={{ color: "var(--text)" }}>
           It stops asking once you have done it.
         </h2>
@@ -191,10 +199,22 @@ export function Landing({ signupsOpen }: { signupsOpen: boolean }) {
       {/* --- close -------------------------------------------------------- */}
       <section className="mx-auto max-w-[1080px] px-5 pb-24">
         <div
-          className="flex flex-col items-center rounded-[26px] px-6 py-14 text-center"
+          className="relative flex flex-col items-center overflow-hidden rounded-[26px] px-6 py-14 text-center"
           style={{ background: "var(--bg-alt)", border: "1px solid var(--line-2)" }}
         >
-          <Logo size={80} />
+          <Doodle
+            name="stars"
+            className="anim-twinkle pointer-events-none absolute left-8 top-8"
+            aria-hidden
+            style={{ width: 74, height: 80, color: "var(--wash)" }}
+          />
+          <Doodle
+            name="stars"
+            className="anim-twinkle pointer-events-none absolute bottom-8 right-10 -scale-x-100"
+            aria-hidden
+            style={{ width: 56, height: 60, color: "var(--wash)", animationDelay: "1.2s" }}
+          />
+          <Logo size={96} />
           <h2 className="mt-6 max-w-[18ch] text-[30px] font-extrabold leading-tight tracking-tight" style={{ color: "var(--text)" }}>
             Stop rediscovering what you forgot.
           </h2>
