@@ -161,8 +161,29 @@ body {
 .anim-wave { animation: flair-wave 2.2s ease-in-out infinite; transform-origin: 20% 80%; }
 .fade-swap { animation: fade-swap 0.26s ease both; }
 
+/*
+ * The board↔list swap runs as a browser view transition (swapView in
+ * TodoApp): the old view fades out where it stands, then the new one fades
+ * in already sitting at its final, centred width. Animating the live layout
+ * instead — a max-width transition — made every card squeeze and rewrap
+ * mid-flight, which is exactly the jarring this replaces. The out and the
+ * in overlap by a few frames so the page never blinks down to bare
+ * background between them.
+ */
+@keyframes vt-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes vt-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+::view-transition-old(root) { animation: vt-fade-out 0.16s ease-in both; }
+::view-transition-new(root) { animation: vt-fade-in 0.26s ease-out 0.1s both; }
+
 @media (prefers-reduced-motion: reduce) {
   .anim-float, .anim-twinkle, .anim-pop, .anim-wave, .fade-swap { animation: none; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
 }
 
 /* Utility layer -------------------------------------------------------- */

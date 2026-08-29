@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Plus, RefreshCw, Search, Sparkles, X } from "lucide-react";
@@ -21,6 +22,26 @@ import { InstallPrompt } from "./InstallPrompt";
 import { bucketVars, BUCKET_ICON } from "./icons";
 import { Logo } from "@/components/Logo";
 import { Doodle } from "@/components/Doodle";
+
+/**
+ * Swap top-level views under the browser's view-transition crossfade: the
+ * old view fades out exactly where it stood, and the new one fades in
+ * already sitting at its final, centred width. The wide board and the
+ * narrow list never visibly reflow into each other — the layout change
+ * happens between the two fades, not during either. Where the API is
+ * missing or motion is reduced, it falls back to a plain update (the keyed
+ * fade-swap container still softens that).
+ */
+function swapView(apply: () => void) {
+  const doc = document as Document & { startViewTransition?: (update: () => void) => unknown };
+  if (typeof doc.startViewTransition !== "function" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    apply();
+    return;
+  }
+  doc.startViewTransition(() => {
+    flushSync(apply);
+  });
+}
 
 export function TodoApp({ initial }: { initial: BoardPayload }) {
   return (
@@ -118,7 +139,7 @@ function Board() {
       {/* Controls */}
       <div className="mb-4 flex items-center gap-2">
         <div className="no-scrollbar -mx-1 flex flex-1 gap-2 overflow-x-auto px-1 py-0.5">
-          <Chip active={filter === null} dimmed={filter !== null} onClick={() => setFilter(null)} count={total}>
+          <Chip active={filter === null} dimmed={filter !== null} onClick={() => swapView(() => setFilter(null))} count={total}>
             All
           </Chip>
           {BUCKETS.map((b) => {
@@ -129,7 +150,7 @@ function Board() {
                 key={b.key}
                 active={filter === b.key}
                 dimmed={filter !== null && filter !== b.key}
-                onClick={() => setFilter(filter === b.key ? null : b.key)}
+                onClick={() => swapView(() => setFilter(filter === b.key ? null : b.key))}
                 count={counts[b.key] ?? 0}
                 accent={vars.accent}
                 tint={vars.tint}
@@ -201,7 +222,7 @@ function Board() {
       <div className="mt-8 flex justify-center">
         <button
           type="button"
-          onClick={() => setShowDone((v) => !v)}
+          onClick={() => swapView(() => setShowDone((v) => !v))}
           className="rounded-full px-4 py-2 text-[13px] font-bold transition"
           style={{ background: "var(--bg-alt)", color: "var(--text-3)" }}
         >
