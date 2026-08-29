@@ -1,4 +1,5 @@
 import { normalizeProvider, type ProviderKey } from "./providers";
+import { buildGmailWebUrl, normalizeMailLink, outlookDeepLink, parseOutlookWebLink } from "./mail-links";
 
 /**
  * A single button's three destinations. Never all three, often only one —
@@ -53,24 +54,6 @@ function zoomAppFromWeb(web?: string, passcode?: string | null) {
   return `zoommtg://${host}/join?${q.toString()}`;
 }
 
-/**
- * Which mailbox Gmail opens.
- *
- * The /u/{n}/ form numbers accounts by the order they were signed into *this
- * browser*, so a link built with u/0 opens whichever Google account happens to
- * be first there. For anyone signed into more than one that is simply the wrong
- * inbox, and Gmail lands on it rather than on the thread — which looks exactly
- * like the deep link not working. authuser= names the account instead and lets
- * Google resolve the index, so the link travels between browsers and profiles.
- *
- * Returns a prefix a fragment can be appended to directly.
- */
-function gmailBase(account?: string, index = 0) {
-  return account && account.includes("@")
-    ? `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(account)}`
-    : `https://mail.google.com/mail/u/${index}/`;
-}
-
 function slackAppFromWeb(web?: string) {
   if (!web) return undefined;
   // https://acme.slack.com/archives/C12345/p1699999999000100
@@ -96,22 +79,31 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
 
   switch (provider) {
     case "outlook": {
-      if (!out.web && id) {
-        out.web =
-          kind === "draft"
-            ? `https://outlook.office.com/mail/drafts/id/${encodeURIComponent(id)}`
-            : `https://outlook.office.com/mail/deeplink/read/${encodeURIComponent(id)}`;
+      // The agent is told to prefer the connector's canonical URL, which for
+      // Graph is the legacy `owa/?ItemID=...&exvsurl=1` webLink — a shape that
+      // strands people on the inbox. Rebuild it as the modern deeplink, and
+      // mine it for the item id so the app links exist even when the agent
+      // sent nothing but that URL.
+      const parsed = out.web ? parseOutlookWebLink(out.web) : null;
+      const itemId = id ?? parsed?.itemId;
+      if (parsed) out.web = outlookDeepLink(parsed.itemId, kind === "draft" ? "draft" : "message", parsed.host);
+
+      if (!out.web && itemId) {
+        out.web = outlookDeepLink(itemId, kind === "draft" ? "draft" : "message");
       }
-      if (!out.mobile && id) {
-        // Outlook mobile registers ms-outlook:// on iOS and Android.
+      if (!out.mobile && itemId) {
+        // Outlook mobile registers ms-outlook:// on iOS and Android; the restId
+        // must be the base64url form, which outlookDeepLink's ids already are.
         out.mobile =
           kind === "draft"
-            ? `ms-outlook://emails/drafts?restId=${encodeURIComponent(id)}`
-            : `ms-outlook://emails/message?restId=${encodeURIComponent(id)}`;
+            ? `ms-outlook://emails/drafts?restId=${encodeURIComponent(itemId)}`
+            : `ms-outlook://emails/message?restId=${encodeURIComponent(itemId)}`;
       }
       if (!out.desktop) {
-        // New Outlook for Windows/Mac claims ms-outlook://; classic Outlook
-        // falls through to OWA, which is why web stays the safety net.
+        // New Outlook (Windows and Mac) claims ms-outlook:// too; classic
+        // Outlook ignores it. chooseUrl only sends a desktop there when the
+        // user asks for the app, and the button falls back to the web link
+        // when nothing opens — so this is an offer, never a dead default.
         out.desktop = out.mobile ?? undefined;
       }
       break;
@@ -124,26 +116,19 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
     }
     case "gmail": {
       if (!out.web) {
-        const base = gmailBase(clean(input.account), u);
-        const mid = clean(input.messageId);
-        // Gmail's #all/ fragment resolves a *thread* id. Handed a message id it
-        // cannot open — which is most of them, since that is what the API
-        // returns first — it gives up and shows All Mail, so prefer the thread.
-        const thread = clean(input.threadId);
-
-        if (mid) {
-          // Searching by RFC-822 id is the most durable Gmail deep link there
-          // is: it survives label moves, archiving and a change of account.
-          out.web = `${base}#search/rfc822msgid:${encodeURIComponent(mid.replace(/[<>]/g, ""))}`;
-        } else if (kind === "draft" && id) {
-          out.web = `${base}#drafts?compose=${encodeURIComponent(id)}`;
-        } else if (thread || id) {
-          out.web = `${base}#all/${encodeURIComponent(thread ?? id!)}`;
-        }
+        out.web =
+          buildGmailWebUrl({
+            messageId: clean(input.messageId),
+            threadId: clean(input.threadId),
+            externalId: id,
+            account: clean(input.account),
+            kind,
+          }) ?? undefined;
       }
-      // Gmail's mobile apps handle mail.google.com through app links, so the
-      // https URL opens the app when it is installed. A bespoke scheme here
-      // would only ever land on the inbox, which is worse than the real thread.
+      // Gmail's mobile app handles mail.google.com through Android app links,
+      // so the https URL opens the app on the thread when it is installed.
+      // There is no documented iOS scheme for a specific thread — googlegmail://
+      // only composes — so https is genuinely the best mobile link that exists.
       if (!out.mobile) out.mobile = out.web ?? undefined;
       break;
     }
@@ -185,6 +170,17 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
   // does not have that app; keep web as the universal fallback where we have it.
   if (!out.web && isHttp(out.desktop)) out.web = out.desktop;
   if (!out.web && isHttp(out.mobile)) out.web = out.mobile;
+
+  // The web slot is the one a browser will always open: no custom schemes in
+  // it, ever, and any legacy shape an agent pasted in gets rewritten here so
+  // every caller stores corrected links rather than re-deriving them.
+  if (out.web && !isHttp(out.web)) {
+    if (!out.desktop) out.desktop = out.web;
+    out.web = undefined;
+  }
+  out.web = normalizeMailLink(out.web);
+  if (isHttp(out.desktop)) out.desktop = normalizeMailLink(out.desktop);
+  if (isHttp(out.mobile)) out.mobile = normalizeMailLink(out.mobile);
 
   return {
     web: out.web ?? null,
@@ -233,6 +229,11 @@ export function chooseUrl(
 
   // auto
   if (isMobilePlatform(platform)) return mobile ?? web ?? desktop;
+  // On a desktop, a custom scheme is a gamble: new Outlook answers it, classic
+  // Outlook ignores it silently. Default to the web app — which is signed in
+  // for anyone who uses it — and let the "open in the app instead" control and
+  // the app preference reach the scheme deliberately, with the fallback ready.
+  if (desktop && !/^https?:\/\//i.test(desktop) && web) return web;
   return desktop ?? web ?? mobile;
 }
 

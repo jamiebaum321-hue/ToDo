@@ -3,6 +3,7 @@ import { prisma } from "./db";
 import { normalizeBucket } from "./buckets";
 import { normalizeProvider } from "./providers";
 import { deriveLinkTarget, defaultLabel, hasAnyUrl } from "./deeplinks";
+import { assertSafeMailLink } from "./mail-links";
 import { listTeam, resolveDelegate, type TeamMemberDTO } from "./team";
 import { SUPPRESSION_REASON, suppressionMap } from "./suppression";
 import { stringifyTags } from "./tasks";
@@ -38,6 +39,24 @@ export interface SyncResult {
   message: string;
 }
 
+/**
+ * The last gate before a link is persisted. deriveLinkTarget already rewrites
+ * the known-bad shapes, so this should never fire — but a shape it cannot fix
+ * gets dropped here, at write time, instead of being discovered by a user
+ * clicking a dead button. The web slot never carries a scheme; the app slots
+ * are the deliberate home for ms-outlook://.
+ */
+function safeUrl(url: string | null | undefined, slot: "web" | "app"): string | null {
+  if (!url) return null;
+  try {
+    assertSafeMailLink(url, { allowOutlookScheme: slot === "app" });
+    return url;
+  } catch (err) {
+    console.warn(`[sync] dropped unsafe ${slot} link: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
 /** Build the link rows for a task, deriving whatever URLs we can. */
 function buildLinkRows(input: TaskInput): Prisma.TaskLinkCreateWithoutTaskInput[] {
   const rows: Prisma.TaskLinkCreateWithoutTaskInput[] = [];
@@ -65,9 +84,9 @@ function buildLinkRows(input: TaskInput): Prisma.TaskLinkCreateWithoutTaskInput[
         kind: "source",
         label: defaultLabel(sourceProvider, "source"),
         provider: sourceProvider,
-        webUrl: target.web ?? null,
-        desktopUrl: target.desktop ?? null,
-        mobileUrl: target.mobile ?? null,
+        webUrl: safeUrl(target.web, "web"),
+        desktopUrl: safeUrl(target.desktop, "app"),
+        mobileUrl: safeUrl(target.mobile, "app"),
         isPrimary: true,
         position: 0,
       });
@@ -98,9 +117,9 @@ function buildLinkRows(input: TaskInput): Prisma.TaskLinkCreateWithoutTaskInput[
       kind: link.kind,
       label: link.label ?? defaultLabel(provider, link.kind),
       provider,
-      webUrl: target.web ?? null,
-      desktopUrl: target.desktop ?? null,
-      mobileUrl: target.mobile ?? null,
+      webUrl: safeUrl(target.web, "web"),
+      desktopUrl: safeUrl(target.desktop, "app"),
+      mobileUrl: safeUrl(target.mobile, "app"),
       isPrimary: link.primary ?? rows.length === 0,
       position: i + 1,
     });
@@ -131,9 +150,9 @@ function buildDraftRow(input: TaskInput): Prisma.DraftCreateWithoutTaskInput | n
     subject: d.subject ?? null,
     body: d.body ?? null,
     externalId: d.externalId ?? null,
-    webUrl: target.web ?? null,
-    desktopUrl: target.desktop ?? null,
-    mobileUrl: target.mobile ?? null,
+    webUrl: safeUrl(target.web, "web"),
+    desktopUrl: safeUrl(target.desktop, "app"),
+    mobileUrl: safeUrl(target.mobile, "app"),
   };
 }
 
