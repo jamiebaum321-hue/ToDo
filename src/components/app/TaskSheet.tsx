@@ -46,6 +46,11 @@ export function TaskSheet({
 }: Props) {
   const [menu, setMenu] = useState<"none" | "snooze" | "move" | "delegate">("none");
   const [delegateTo, setDelegateTo] = useState(task.delegateTo ?? "");
+  /** Whose address we are asking for, and the address itself, plus what we saved. */
+  const [askEmail, setAskEmail] = useState<string | null>(null);
+  const [emailDraft, setEmailDraft] = useState("");
+  const [emails, setEmails] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
   const [showDraft, setShowDraft] = useState(false);
 
   const vars = bucketVars(task.bucket);
@@ -293,12 +298,16 @@ export function TaskSheet({
                   and a name that matches the roster is one the agent knows.
                   Someone with an email on file gets the full hand-off: the
                   task is marked delegated AND a ready-to-send email opens in
-                  the user's own mail client, thread link included. */}
+                  the user's own mail client, thread link included. Someone
+                  without one gets asked for it here rather than silently
+                  doing half the job — the first live team had exactly one
+                  member, no address, so "delegate now" opened nothing. */}
               {team.length > 0 ? (
                 <>
                   <div className="mb-2 flex flex-wrap gap-1.5 px-1">
                     {team.map((m) => {
-                      const mailto = delegateMailto(task, m);
+                      const member = emails[m.name] ? { ...m, email: emails[m.name] } : m;
+                      const mailto = delegateMailto(task, member);
                       const cls = "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[13px] font-bold transition active:scale-95";
                       const sty = { background: "var(--tint-delegate)", color: "var(--accent-delegate)" } as const;
                       return mailto ? (
@@ -321,11 +330,11 @@ export function TaskSheet({
                           key={m.id}
                           type="button"
                           onClick={() => {
-                            onDelegate(task, m.name);
-                            setMenu("none");
+                            setAskEmail(askEmail === m.name ? null : m.name);
+                            setEmailDraft("");
                           }}
                           className={cls}
-                          style={sty}
+                          style={{ ...sty, outline: askEmail === m.name ? "2px solid var(--accent-delegate)" : undefined }}
                         >
                           {m.name}
                           <span className="ml-0.5 font-semibold opacity-70">{m.functionLabel}</span>
@@ -333,10 +342,84 @@ export function TaskSheet({
                       );
                     })}
                   </div>
-                  <p className="mb-2 px-1 text-[11.5px] font-semibold" style={{ color: "var(--text-3)" }}>
-                    An envelope means they have an email on file — choosing them also drafts the hand-off email for
-                    you, with the thread linked.
-                  </p>
+
+                  {askEmail ? (
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        const person = team.find((t) => t.name === askEmail);
+                        const address = emailDraft.trim();
+                        if (!person || !address) return;
+                        setSaving(true);
+                        try {
+                          // Upserts by name, so this fills the gap on the
+                          // roster the agent reads too — not just this sheet.
+                          await fetch("/api/team", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              name: person.name,
+                              email: address,
+                              function: person.function,
+                              level: person.level,
+                              note: person.note ?? "",
+                            }),
+                          });
+                          setEmails((prev) => ({ ...prev, [person.name]: address }));
+                          const mailto = delegateMailto(task, { ...person, email: address });
+                          onDelegate(task, person.name);
+                          setAskEmail(null);
+                          setMenu("none");
+                          if (mailto) window.location.href = mailto;
+                        } finally {
+                          setSaving(false);
+                        }
+                      }}
+                      className="mb-2 px-1"
+                    >
+                      <p className="pb-1.5 text-[11.5px] font-semibold" style={{ color: "var(--text-3)" }}>
+                        No email on file for {askEmail}. Add one and the hand-off email opens straight away — it is
+                        saved to your team, so next time is one tap.
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          autoFocus
+                          type="email"
+                          value={emailDraft}
+                          onChange={(e) => setEmailDraft(e.target.value)}
+                          placeholder={`email for ${askEmail}`}
+                          className="min-w-0 flex-1 rounded-xl px-3 py-2.5 text-[14px] font-semibold outline-none"
+                          style={{ background: "var(--card)", border: "1px solid var(--line)", color: "var(--text)" }}
+                        />
+                        <button
+                          type="submit"
+                          disabled={saving}
+                          className="rounded-xl px-4 py-2.5 text-[14px] font-bold text-white disabled:opacity-60"
+                          style={{ background: "var(--accent-delegate)" }}
+                        >
+                          {saving ? "Saving…" : "Save & write it"}
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const name = askEmail;
+                          setAskEmail(null);
+                          setMenu("none");
+                          onDelegate(task, name);
+                        }}
+                        className="mt-1.5 text-[12px] font-bold underline underline-offset-2"
+                        style={{ color: "var(--text-3)" }}
+                      >
+                        Just mark it delegated
+                      </button>
+                    </form>
+                  ) : (
+                    <p className="mb-2 px-1 text-[11.5px] font-semibold" style={{ color: "var(--text-3)" }}>
+                      An envelope means they have an email on file — choosing them also drafts the hand-off email for
+                      you, with the thread linked.
+                    </p>
+                  )}
                 </>
               ) : null}
               <form
@@ -348,7 +431,6 @@ export function TaskSheet({
                 className="flex gap-2 px-1 pb-1"
               >
                 <input
-                  autoFocus
                   value={delegateTo}
                   onChange={(e) => setDelegateTo(e.target.value)}
                   placeholder="Name or email"

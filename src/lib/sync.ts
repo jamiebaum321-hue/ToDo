@@ -34,6 +34,8 @@ export interface SyncResult {
    * a genuine task over a stale name would be the worse failure.
    */
   unknownDelegates: { title: string; delegateTo: string }[];
+  /** Gmail tasks that arrived without the one id that opens the conversation. */
+  linkGaps: { title: string; missing: string }[];
   createdTasks: { id: string; title: string; bucket: string }[];
   counts: Record<string, number>;
   message: string;
@@ -260,6 +262,7 @@ export async function syncTasks(
     skippedTasks: [],
     removedTasks: [],
     unknownDelegates: [],
+    linkGaps: [],
     createdTasks: [],
     counts: {},
     message: "",
@@ -293,6 +296,14 @@ export async function syncTasks(
     // so a name on them can be someone who has since left.
     if (raw.delegateTo && team.length > 0 && !resolveDelegate(raw.delegateTo, team)) {
       result.unknownDelegates.push({ title: raw.title, delegateTo: raw.delegateTo });
+    }
+
+    // The same staleness problem, for links: an assistant that connected weeks
+    // ago is holding the instructions from that day. A Gmail task with no
+    // threadId cannot open the conversation in the browser OR the app — the
+    // user just gets a search page — so say so here, where a live run reads it.
+    if (fields.sourceProvider === "gmail" && !fields.sourceThreadId) {
+      result.linkGaps.push({ title: raw.title, missing: "source.threadId" });
     }
     const links = buildLinkRows(raw);
     const draft = buildDraftRow(raw);
@@ -418,6 +429,14 @@ export async function syncTasks(
   ];
   if (result.skipped > 0) parts.push(`${result.skipped} skipped (already handled)`);
   result.message = parts.join(", ") + ".";
+
+  if (result.linkGaps.length > 0) {
+    const titles = result.linkGaps.slice(0, 3).map((g) => `"${g.title}"`).join(", ");
+    result.message +=
+      ` ${result.linkGaps.length} Gmail task(s) arrived without source.threadId (${titles}${result.linkGaps.length > 3 ? ", …" : ""}).` +
+      " Gmail's thread id is the only id that opens the conversation — in the browser AND in the Gmail app, which refuses a message id." +
+      " Every messages.get returns threadId: send it on the next run and those buttons start landing on the thread.";
+  }
 
   if (result.unknownDelegates.length > 0) {
     const names = [...new Set(result.unknownDelegates.map((d) => d.delegateTo))];

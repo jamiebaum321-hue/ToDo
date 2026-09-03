@@ -58,8 +58,8 @@ const SOURCE_SCHEMA = {
     receivedAt: str("ISO 8601 timestamp of the original item."),
     accountIndex: int("For Gmail's /u/{n}/ multi-account URLs. Defaults to 0."),
     url: str("The canonical web URL if the connector gave you one (Graph webLink, Teams permalink, a calendar event's webLink/htmlLink). Always prefer this over anything derived, and send it untouched — the Graph webLink is field-tested as the one browser link that opens the exact thread, so the app keeps it byte-for-byte and mines it for the mobile app link. Use DEFAULT Graph ids throughout (never Prefer: IdType=ImmutableId — links built from immutable ids do not resolve in Outlook on the web)."),
-    desktopUrl: str("Desktop app URL if you know it, e.g. msteams:/l/message/..."),
-    mobileUrl: str("Mobile app URL if you know it, e.g. ms-outlook://emails/message?restId=..."),
+    desktopUrl: str("Desktop app URL if the connector gave you a real one, e.g. msteams:/l/message/... Leave app URLs out for mail: the app derives them and only keeps device-verified shapes."),
+    mobileUrl: str("Mobile app URL if the connector gave you a real one. Do not hand-write one for mail or calendar — an invented ms-outlook://events/open was found opening Outlook on the wrong screen, and unverified schemes are dropped in favour of the https link."),
   },
 } as const;
 
@@ -230,7 +230,7 @@ export const TOOLS: ToolDefinition[] = [
             : null,
           guidance:
             "Build the full list for the window, then send it in ONE sync_tasks call with replace='window'. Anything you leave out is cleared. Anything in alreadyHandled will be refused and reported back to you — do not re-raise those just because the original email is still sitting in the mailbox; only something genuinely new on the same item (a fresh reply, a moved deadline) justifies a new task, and a message you have already seen is not new evidence. Follow `houseRules` even where this run's prompt says nothing about them. " +
-            "Link rules, field-tested: Gmail needs source.threadId (the only id that opens the conversation in browser AND app) plus source.account; Outlook needs the Graph webLink untouched in source.url, with DEFAULT Graph ids (immutable ids break links). A draft must be a REPLY draft created on the source thread (Gmail drafts.create with threadId; Outlook createReply), never a standalone message. For a calendar invite, add a links[] entry kind 'calendar' with the event's own webLink/htmlLink so accepting happens in the calendar, not the mailbox.",
+            "Link rules, field-tested: Gmail needs source.threadId (the only id that opens the conversation in browser AND app) plus source.account; Outlook needs the Graph webLink untouched in source.url, with DEFAULT Graph ids (immutable ids break links). A draft must be a REPLY draft created on the source thread (Gmail drafts.create with threadId; Outlook createReply), never a standalone message. For a meeting invite you want accepted, send the INVITE EMAIL as source (Accept/Decline live there — a calendar deep link opens a phone's mail app on the wrong screen) and add the event as a links[] entry kind 'calendar' with its own webLink/htmlLink. Never hand-write ms-outlook:// or googlegmail:// URLs: the app builds those itself and keeps only device-verified shapes.",
         },
       );
     },

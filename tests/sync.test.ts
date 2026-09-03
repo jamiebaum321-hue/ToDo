@@ -79,7 +79,9 @@ describe("syncTasks", () => {
     await sync([{ ...bobEmail, draft: { provider: "outlook", kind: "reply", body: "Hi Bob…", externalId: "d1" } }]);
     const draft = await prisma.draft.findFirst({ where: { task: { userId } } });
     expect(draft?.body).toBe("Hi Bob…");
-    expect(draft?.webUrl).toContain("/mail/drafts/id/d1");
+    // The owa container, the one shape field-tested as actually opening an
+    // item; mail/drafts/id/<id> showed no message at all.
+    expect(draft?.webUrl).toContain("/owa/?ItemID=d1");
   });
 
   it("does not write anything on a dry run", async () => {
@@ -385,5 +387,106 @@ describe("rows stored before mail-links.ts existed", () => {
     // the rfc822 search (which lands on a results page) is only the
     // fallback for tasks that never got a thread id.
     expect(link?.web).toContain("#all/t9");
+  });
+});
+
+describe("the shapes found on a live account", () => {
+  it("drops an app link the agent invented, keeping the browser link that works", async () => {
+    // Verbatim from a real account: the agent supplied this itself — the app
+    // never builds it — and on a phone it opened Outlook on the wrong screen
+    // instead of the event.
+    await sync([
+      {
+        title: "Accept the Food Import Group AI meeting",
+        bucket: "urgent_important",
+        source: {
+          provider: "outlook_calendar",
+          type: "meeting",
+          externalId: "AAMk-evt-1",
+          account: "jamie@netsysgroup.com",
+          url: "https://outlook.office365.com/owa/?itemid=AAMk%2Bevt%2F1&exvsurl=1&path=/calendar/item",
+          mobileUrl: "ms-outlook://events/open?restId=AAMk-evt-1",
+        },
+      },
+    ]);
+
+    const task = await prisma.task.findFirstOrThrow({ where: { userId }, include: taskInclude });
+    const link = serializeTask(task).links[0];
+    expect(link.web).toBe("https://outlook.office365.com/owa/?itemid=AAMk%2Bevt%2F1&exvsurl=1&path=/calendar/item");
+    // The browser link is the fallback that always opens something.
+    expect(link.mobile).toBe(link.web);
+    expect(link.mobile).not.toContain("events/open");
+  });
+
+  it("tells the agent which Gmail tasks arrived with no way to open the thread", async () => {
+    const r = await sync([
+      { title: "Reply to Carl", bucket: "urgent_important", source: { provider: "gmail", type: "email", externalId: "1a048ec", account: "j@w.com" } },
+      { title: "Reply to Dana", bucket: "urgent_not_priority", source: { provider: "gmail", type: "email", externalId: "1a04d61", threadId: "1a04a84", account: "j@w.com" } },
+    ]);
+
+    expect(r.linkGaps).toHaveLength(1);
+    expect(r.linkGaps[0]).toMatchObject({ title: "Reply to Carl", missing: "source.threadId" });
+    expect(r.message).toContain("threadId");
+    // The one that came with a thread id is not complained about, and lands
+    // on the conversation in both slots.
+    const dana = await prisma.task.findFirstOrThrow({ where: { userId, title: "Reply to Dana" }, include: taskInclude });
+    const link = serializeTask(dana).links[0];
+    expect(link.web).toContain("#all/1a04a84");
+    expect(link.mobile).toBe("googlegmail:///cv=1a04a84");
+  });
+
+  it("aims an Outlook reply draft at the conversation, not at the draft id", async () => {
+    await sync([
+      {
+        title: "Send the Cornell Pace chase",
+        bucket: "urgent_important",
+        source: { provider: "outlook", type: "email", externalId: "AAMk-src-9", account: "jamie@netsysgroup.com" },
+        draft: { provider: "outlook", kind: "reply", externalId: "AAMk-draft-4", body: "Give me a yes and I'll send it." },
+      },
+    ]);
+
+    const dto = serializeTask(
+      await prisma.task.findFirstOrThrow({ where: { userId }, include: taskInclude }),
+    );
+    // Field result: an app link built from the DRAFT id opened Outlook on
+    // "message not found". The reply draft lives in the source conversation.
+    expect(dto.draft?.mobile).toBe("ms-outlook://emails/message?restId=AAMk-src-9");
+    expect(dto.draft?.web).toContain("/owa/?ItemID=");
+  });
+
+  it("sends a Gmail draft with no thread to the drafts list, not a blank composer", async () => {
+    await sync([
+      {
+        title: "Thank Frances for the towel idea",
+        bucket: "delegate",
+        source: { provider: "gmail", type: "email", externalId: "1a04906", account: "jamiebaum321@gmail.com" },
+        draft: { provider: "gmail", kind: "reply", externalId: "draft-9", body: "Thanks Frances…" },
+      },
+    ]);
+
+    const dto = serializeTask(
+      await prisma.task.findFirstOrThrow({ where: { userId }, include: taskInclude }),
+    );
+    expect(dto.draft?.web).toBe("https://mail.google.com/mail/u/?authuser=jamiebaum321%40gmail.com#drafts");
+    expect(dto.draft?.web).not.toContain("compose=");
+  });
+
+  it("heals a stored blank-composer draft link at read time", async () => {
+    await sync([{ ...newsletter, source: { ...newsletter.source, threadId: undefined, account: "j@w.com" } }]);
+    const task = await prisma.task.findFirstOrThrow({ where: { userId } });
+    await prisma.draft.create({
+      data: {
+        taskId: task.id,
+        provider: "gmail",
+        kind: "reply",
+        body: "Written before the fix",
+        webUrl: "https://mail.google.com/mail/u/?authuser=j%40w.com#drafts?compose=draft-legacy",
+      },
+    });
+
+    const dto = serializeTask(
+      await prisma.task.findUniqueOrThrow({ where: { id: task.id }, include: taskInclude }),
+    );
+    expect(dto.draft?.web).toBe("https://mail.google.com/mail/u/?authuser=j%40w.com#drafts");
   });
 });

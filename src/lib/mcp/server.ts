@@ -71,8 +71,9 @@ export async function buildInstructions(actor: Actor): Promise<string> {
     "- **Gmail** — `source.threadId` is REQUIRED (every `messages.get` returns one): it is the only id that lands ON the conversation, in the browser and in the Gmail app alike. Also send `source.messageId` (the RFC-822 `Message-ID` header) as the durable fallback, and always `source.account`.",
     "- **Outlook / Graph** — the message's `webLink` in `source.url`, UNTOUCHED — it is the one browser link that opens the thread. The Graph id in `source.externalId`, the mailbox in `source.account`, and default Graph ids only (never `Prefer: IdType=\"ImmutableId\"`; links built from immutable ids do not resolve).",
     "- **Drafts** — a draft must be a REPLY draft created on the source thread (Gmail: `drafts.create` with `message.threadId`; Outlook: `createReply`, then patch the body). The draft buttons open the conversation with the draft sitting in it; a standalone draft shows up nowhere.",
-    "- **Calendar invites** — add a `links` entry with kind `calendar` carrying the event's own link (`webLink` on a Graph event, `htmlLink` from Google Calendar), plus the event id and account, so accepting happens in the calendar, not the mailbox.",
+    "- **Meeting invites you want accepted** — Accept/Decline live on the INVITE EMAIL, not the calendar entry: a phone tapping a calendar deep link just opens the mail app on the wrong screen (field-tested). So send the invite EMAIL as `source` (provider `outlook` or `gmail`, with its own id and webLink) and add the event as a `links` entry with kind `calendar` carrying the event's own link (`webLink` on a Graph event, `htmlLink` from Google Calendar). The user then gets the RSVP buttons on the main button, and the calendar as the second.",
     "- **Teams, Slack, Zoom** — the permalink in `source.url`; the app derives the app links from it.",
+    "- **Do not invent app links.** Send https URLs and ids; the app builds the `ms-outlook://` and `googlegmail:///` handoffs itself, and it only keeps shapes a real device confirmed. Anything else it drops in favour of the browser link, so a hand-written scheme is at best ignored and at worst the thing that opened the app on the wrong screen.",
   ].join("\n");
 }
 
@@ -88,7 +89,7 @@ That button is the whole point of the app, and a link that lands on a generic in
 
 - **Gmail** — \`source.threadId\` is REQUIRED (every \`messages.get\` returns one): the only id that lands ON the conversation, in the browser and in the Gmail app alike. Also send \`source.messageId\` (the RFC-822 \`Message-ID\` header, from \`payload.headers\`) as the durable fallback, and always \`source.account\` — Gmail numbers accounts by browser sign-in order, so without the address the link can open the wrong mailbox.
 - **Outlook / Graph** — send the message's \`webLink\` in \`source.url\`, untouched; the message id in \`source.externalId\`; the mailbox in \`source.account\`. Default Graph ids only — never \`Prefer: IdType="ImmutableId"\`; links built from immutable ids do not resolve.
-- **Calendar invites** — add a \`links\` entry with kind \`calendar\` carrying the event's own link (\`webLink\` on a Graph event, \`htmlLink\` from Google Calendar), so accepting happens in the calendar, not the mailbox.
+- **Meeting invites you want accepted** — Accept/Decline live on the INVITE EMAIL, not the calendar entry, so send that email as \`source\` and add the event as a \`links\` entry with kind \`calendar\` (\`webLink\` on a Graph event, \`htmlLink\` from Google Calendar).
 - **Teams, Slack, Zoom** — send the permalink in \`source.url\`; the app derives the desktop and mobile app links from it.
 
 If a connector hands you a canonical URL, pass it in \`source.url\` — a real permalink always beats one the app has to reconstruct.`;
