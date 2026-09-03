@@ -25,7 +25,7 @@ describe("deriveLinkTarget", () => {
     // A reply draft sits inside the conversation it answers, so the app
     // handoff opens that conversation — via the source message's id.
     const t = deriveLinkTarget({ provider: "outlook", externalId: "draft-1", anchorItemId: "src-9", kind: "draft" });
-    expect(t.web).toContain("/mail/drafts/id/");
+    expect(t.web).toContain("/owa/?ItemID=");
     expect(t.mobile).toBe("ms-outlook://emails/message?restId=src-9");
 
     // Without the source anchor there is no app link worth promising.

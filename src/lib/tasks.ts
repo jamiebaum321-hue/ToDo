@@ -3,7 +3,8 @@ import { getBucket, type BucketKey } from "./buckets";
 import {
   buildGmailWebUrl,
   gmailMobileLink,
-  isOutlookScheme,
+  isCustomScheme,
+  isVerifiedScheme,
   normalizeMailLink,
   outlookMobileLink,
   outlookSchemeFromWeb,
@@ -136,23 +137,30 @@ function serializeLink(link: TaskLink, ids: MailIds): TaskLinkDTO {
 
 const isGmailUrl = (u: string | null) => !!u && /^https?:\/\/mail\.google\.com\//i.test(u);
 const isGmailScheme = (u: string | null) => !!u && u.startsWith("googlegmail:");
-const isOutlookDraftScheme = (u: string | null) => !!u && /^ms-outlook:\/\/emails\/drafts/i.test(u);
+/** The blank-composer shape: Gmail wants its own compose token, not an API draft id. */
+const isGmailComposeUrl = (u: string | null) => !!u && isGmailUrl(u) && /[?&#]compose=/i.test(u);
 
 /**
- * Legacy-safe link slots, now repaired from stored IDS rather than by parsing
- * URLs. The field tests drew hard lines a URL alone cannot honour:
+ * Legacy-safe link slots, repaired from stored IDS rather than by parsing
+ * URLs. Every rule here was written by a real device failing:
  *
- * - Gmail's app scheme resolves ONLY a real thread id — a cv= link derived
- *   from #all/<id> "failed to open" when that id was a message id, so the
- *   scheme is built from sourceThreadId or not at all, and a stored cv= link
- *   that disagrees with the stored thread id is discarded as that same bug.
- * - A rfc822msgid search lands on a results list, not the thread, so when the
- *   thread id is known the gmail web link is rebuilt to land ON the thread.
- * - A reply draft lives inside its conversation: draft buttons aim at the
- *   thread (gmail web + app, outlook app via the SOURCE message id). The
- *   ms-outlook drafts scheme opened the app on nothing and is replaced.
- * - The desktop slot never carries a scheme — new Outlook on Windows opens
- *   and refuses them — and an app slot that copies the web link says nothing.
+ * - Gmail's app scheme resolves ONLY a real thread id — a cv= link built from
+ *   a message id opened the app on "failed to open link" — so it comes from
+ *   the stored thread id or not at all, and a stored cv= that disagrees with
+ *   that id is discarded as that same bug.
+ * - A rfc822msgid search lands on a results list, so with a thread id known
+ *   the web link is rebuilt to land ON the conversation.
+ * - `#drafts?compose=<draft id>` opened an empty composer; with no thread id
+ *   to aim at, the drafts LIST is the honest destination.
+ * - A reply draft lives inside its conversation, so draft buttons aim there:
+ *   Gmail web + app via the thread, the Outlook app via the SOURCE message.
+ *   A draft never derives its app link from its own web link — that produced
+ *   an app handoff carrying a draft id, i.e. "message not found".
+ * - Only app schemes proven on a device survive at all (isVerifiedScheme);
+ *   an agent-supplied ms-outlook://events/open was found live, opening
+ *   Outlook on the wrong screen. The https link always works, so it wins.
+ * - The desktop slot never carries a scheme: new Outlook on Windows opens
+ *   and then refuses them.
  */
 function mailSlots(webUrl: string | null, desktopUrl: string | null, mobileUrl: string | null, ids: MailIds = {}) {
   let web = normalizeMailLink(webUrl);
@@ -160,25 +168,43 @@ function mailSlots(webUrl: string | null, desktopUrl: string | null, mobileUrl: 
   const gmailish = ids.provider === "gmail" || isGmailUrl(web);
   const thread = ids.threadId?.trim() || null;
   const isDraft = ids.kind === "draft";
+  // A calendar item is not a message: its id in the mail app's scheme is just
+  // another invented link. The OWA calendar link carries path=/calendar/item.
+  const isCalendar =
+    ids.kind === "calendar" ||
+    (ids.provider ?? "").endsWith("_calendar") ||
+    /[?&]path=\/calendar/i.test(web ?? "");
 
-  if (gmailish && thread && (web === null || isGmailUrl(web))) {
-    web = buildGmailWebUrl({ threadId: thread, account: ids.account, kind: isDraft ? "draft" : undefined }) ?? web;
+  if (gmailish && (web === null || isGmailUrl(web))) {
+    const rebuilt = buildGmailWebUrl({
+      threadId: thread,
+      account: ids.account,
+      kind: isDraft ? "draft" : undefined,
+    });
+    // With a thread id, land on the conversation. Without one, the only thing
+    // worth rewriting is the blank-composer draft link.
+    if (thread || (isDraft && isGmailComposeUrl(web))) web = rebuilt ?? web;
   }
 
   const outlookAnchor =
-    ids.provider === "outlook" && isDraft && ids.outlookItemId ? outlookMobileLink(toBase64Url(ids.outlookItemId), "message") : null;
-  const scheme = outlookSchemeFromWeb(web) ?? outlookAnchor ?? (gmailish && thread ? gmailMobileLink(thread) : null);
+    ids.provider === "outlook" && isDraft && ids.outlookItemId
+      ? outlookMobileLink(toBase64Url(ids.outlookItemId))
+      : null;
+  const gmailApp = gmailish && thread ? gmailMobileLink(thread) : null;
+  const scheme = isCalendar ? null : isDraft ? (outlookAnchor ?? gmailApp) : (outlookSchemeFromWeb(web) ?? gmailApp);
 
   const real = (slot: string | null) => (slot && slot !== webUrl && slot !== web ? slot : null);
   let storedMobile = real(mobileUrl);
-  // The two app links that field-tested as landing nowhere.
-  if (isGmailScheme(storedMobile) && storedMobile !== (thread ? gmailMobileLink(thread) : null)) storedMobile = null;
-  if (isOutlookDraftScheme(storedMobile)) storedMobile = null;
+  if (isCustomScheme(storedMobile) && !isVerifiedScheme(storedMobile)) storedMobile = null;
+  if (isGmailScheme(storedMobile) && storedMobile !== gmailApp) storedMobile = null;
+  // A draft's own web link is about the draft; its app link must be the thread.
+  if (isDraft && isCustomScheme(storedMobile) && storedMobile !== scheme) storedMobile = null;
 
+  const storedDesktop = real(desktopUrl) ?? desktopUrl;
   return {
     web,
-    desktop: isOutlookScheme(desktopUrl) ? null : (real(desktopUrl) ?? desktopUrl),
-    mobile: storedMobile ?? scheme ?? (isGmailScheme(mobileUrl) || isOutlookDraftScheme(mobileUrl) ? web : mobileUrl),
+    desktop: isCustomScheme(storedDesktop) ? null : storedDesktop,
+    mobile: storedMobile ?? scheme ?? (isCustomScheme(mobileUrl) ? web : mobileUrl),
   };
 }
 

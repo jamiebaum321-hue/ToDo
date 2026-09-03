@@ -1,5 +1,16 @@
 import { normalizeProvider, type ProviderKey } from "./providers";
-import { buildGmailWebUrl, gmailMobileLink, isOutlookScheme, normalizeMailLink, outlookMobileLink, outlookWebLink, parseOutlookWebLink } from "./mail-links";
+import {
+  buildGmailWebUrl,
+  gmailMobileLink,
+  isCustomScheme,
+  isOutlookScheme,
+  isVerifiedScheme,
+  normalizeMailLink,
+  outlookDraftsFolder,
+  outlookMobileLink,
+  outlookWebLink,
+  parseOutlookWebLink,
+} from "./mail-links";
 
 /**
  * A single button's three destinations. Never all three, often only one —
@@ -97,6 +108,9 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
 
       if (!out.web && itemId) {
         out.web = outlookWebLink(itemId, kind === "draft" ? "draft" : "message");
+      } else if (!out.web && kind === "draft") {
+        // No draft id: the folder is honest, a blank composer is not.
+        out.web = outlookDraftsFolder();
       }
       if (!out.mobile) {
         // Field-confirmed: emails/message opens the app on the conversation,
@@ -104,9 +118,9 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
         // draft's app link aims at the thread it replies to instead — the
         // reply draft is sitting right there in the conversation view.
         if (kind === "draft") {
-          if (anchor) out.mobile = outlookMobileLink(anchor, "message");
+          if (anchor) out.mobile = outlookMobileLink(anchor);
         } else if (itemId) {
-          out.mobile = outlookMobileLink(itemId, "message");
+          out.mobile = outlookMobileLink(itemId);
         }
       }
       // No desktop slot on purpose. New Outlook for Windows registers the
@@ -213,6 +227,14 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
     if (!out.mobile) out.mobile = out.desktop;
     out.desktop = undefined;
   }
+
+  // An app link this app did not build and cannot vouch for is worse than no
+  // app link: a live account was found carrying an agent-supplied
+  // ms-outlook://events/open (opened Outlook on the wrong screen) and a drafts
+  // scheme built from a draft id ("message not found"). Only shapes a real
+  // device confirmed are kept; the rest fall back to the browser, which works.
+  if (isCustomScheme(out.mobile) && !isVerifiedScheme(out.mobile)) out.mobile = out.web ?? undefined;
+  if (isCustomScheme(out.desktop) && !isVerifiedScheme(out.desktop)) out.desktop = undefined;
   out.web = normalizeMailLink(out.web);
   if (isHttp(out.desktop)) out.desktop = normalizeMailLink(out.desktop);
   if (isHttp(out.mobile)) out.mobile = normalizeMailLink(out.mobile);

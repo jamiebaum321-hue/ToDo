@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   assertSafeMailLink,
+  isCustomScheme,
+  isVerifiedScheme,
+  outlookDraftsFolder,
   gmailMobileLink,
   gmailSchemeFromWeb,
   buildGmailWebUrl,
@@ -98,8 +101,9 @@ describe("outlook: the webLink is the browser link that works", () => {
     );
   });
 
-  it("keeps drafts on the drafts path — there is no owa form for a draft", () => {
-    expect(outlookWebLink("d+1/x", "draft")).toBe("https://outlook.office.com/mail/drafts/id/d-1_x");
+  it("puts a draft in the same owa container, without the read-pane hint", () => {
+    // Field result: mail/drafts/id/<id> showed no message at all.
+    expect(outlookWebLink("d-1_x", "draft")).toBe("https://outlook.office365.com/owa/?ItemID=d%2B1%2Fx&exvsurl=1");
   });
 
   it("parses the ItemID out of a webLink, converted to base64url for the app", () => {
@@ -109,7 +113,7 @@ describe("outlook: the webLink is the browser link that works", () => {
 
   it("builds the mobile scheme that field-tested as opening the message", () => {
     expect(outlookMobileLink("AAMk-a_b=")).toBe("ms-outlook://emails/message?restId=AAMk-a_b%3D");
-    expect(outlookMobileLink("d1", "draft")).toBe("ms-outlook://emails/drafts?restId=d1");
+    // There is no drafts variant any more: it opened the app on nothing.
   });
 
   it("derives the app handoff from either stored browser shape", () => {
@@ -166,5 +170,57 @@ describe("assertSafeMailLink: the bad shapes are rejected by name", () => {
     ]) {
       expect(() => assertSafeMailLink(url)).not.toThrow();
     }
+  });
+});
+
+describe("app schemes: only the ones a device confirmed", () => {
+  it("knows a custom scheme from an ordinary link", () => {
+    expect(isCustomScheme("ms-outlook://emails/message?restId=x")).toBe(true);
+    expect(isCustomScheme("googlegmail:///cv=t1")).toBe(true);
+    expect(isCustomScheme("https://outlook.office365.com/owa/?ItemID=x")).toBe(false);
+    expect(isCustomScheme("mailto:someone@example.com")).toBe(false);
+    expect(isCustomScheme(null)).toBe(false);
+  });
+
+  it("vouches only for the field-tested shapes", () => {
+    expect(isVerifiedScheme("ms-outlook://emails/message?restId=abc")).toBe(true);
+    expect(isVerifiedScheme("googlegmail:///cv=t1")).toBe(true);
+    expect(isVerifiedScheme("msteams:/l/message/19:abc")).toBe(true);
+    // Found live on a real account, supplied by the agent: opened the Outlook
+    // app on the wrong screen instead of the event.
+    expect(isVerifiedScheme("ms-outlook://events/open?restId=abc")).toBe(false);
+    // Opened the app on nothing at all.
+    expect(isVerifiedScheme("ms-outlook://emails/drafts?restId=abc")).toBe(false);
+    expect(isVerifiedScheme("weird://whatever")).toBe(false);
+  });
+
+  it("refuses to store an unverified scheme, in any slot", () => {
+    expect(() => assertSafeMailLink("ms-outlook://events/open?restId=abc", { allowOutlookScheme: true })).toThrow(
+      /Unverified app-scheme/,
+    );
+    expect(() => assertSafeMailLink("ms-outlook://emails/drafts?restId=abc", { allowOutlookScheme: true })).toThrow(
+      /Unverified app-scheme/,
+    );
+    expect(() => assertSafeMailLink("ms-outlook://emails/message?restId=abc", { allowOutlookScheme: true })).not.toThrow();
+    expect(() => assertSafeMailLink("googlegmail:///cv=t1", { allowOutlookScheme: true })).not.toThrow();
+  });
+
+  it("builds an Outlook draft link in the container that works, minus the read-pane hint", () => {
+    // Field result: mail/drafts/id/<id> opened Outlook on the web with no
+    // message shown. The owa ItemID container is the proven one.
+    expect(outlookWebLink("AAMk-d_1=", "draft")).toBe(
+      "https://outlook.office365.com/owa/?ItemID=AAMk%2Bd%2F1%3D&exvsurl=1",
+    );
+    expect(outlookDraftsFolder()).toBe("https://outlook.office.com/mail/drafts");
+  });
+
+  it("sends a draft with no thread to the drafts list, never a blank composer", () => {
+    // `#drafts?compose=<draft id>` opened an empty compose window.
+    expect(buildGmailWebUrl({ kind: "draft", account: "j@w.com" })).toBe(
+      "https://mail.google.com/mail/u/?authuser=j%40w.com#drafts",
+    );
+    expect(buildGmailWebUrl({ kind: "draft", threadId: "t7", account: "j@w.com" })).toBe(
+      "https://mail.google.com/mail/u/?authuser=j%40w.com#all/t7",
+    );
   });
 });

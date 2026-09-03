@@ -42,6 +42,33 @@ export function isOutlookScheme(url: string | null | undefined): boolean {
   return !!url && OUTLOOK_SCHEME.test(url);
 }
 
+/**
+ * The custom schemes a real device actually opened something with.
+ *
+ * Everything else is a guess, and guesses cost more than they pay: a live
+ * account was found carrying `ms-outlook://events/open?restId=…` (the agent
+ * supplied it; the app never builds it) which opened Outlook on the wrong
+ * screen, and a drafts scheme built from a draft id, which opened the app on
+ * "message not found". A link the app cannot vouch for is worse than no app
+ * link at all, because the https fallback always works.
+ */
+const VERIFIED_SCHEMES: RegExp[] = [
+  /^ms-outlook:\/\/emails\/message\?restId=/i,
+  /^googlegmail:\/\/\/cv=/i,
+  /^msteams:\/l\//i,
+  /^slack:\/\/channel\?/i,
+  /^zoommtg:\/\//i,
+];
+
+/** Anything that is not http(s) or mailto: — i.e. needs an app to answer it. */
+export function isCustomScheme(url: string | null | undefined): boolean {
+  return !!url && /^[a-z][a-z0-9+.-]*:/i.test(url) && !/^(?:https?|mailto):/i.test(url);
+}
+
+export function isVerifiedScheme(url: string | null | undefined): boolean {
+  return !!url && VERIFIED_SCHEMES.some((re) => re.test(url));
+}
+
 /** Graph REST ids are base64url; the webLink's ItemID is plain base64. */
 export function toBase64Url(id: string): string {
   return id.replace(/\+/g, "-").replace(/\//g, "_");
@@ -73,20 +100,32 @@ export function parseOutlookWebLink(url: string): { host: string; itemId: string
  * The Outlook browser link for an item id (base64url in, as Graph returns it).
  *
  * Deliberately the same owa shape Microsoft's own webLink uses, because that
- * is the shape that field-tested as opening the exact thread. Drafts use the
- * modern drafts path — there is no owa equivalent for a draft.
+ * is the shape that field-tested as opening the exact thread — for drafts too:
+ * `mail/drafts/id/<id>` opened Outlook on the web showing no message at all
+ * (field-tested), so a draft now rides the same proven container. The only
+ * difference is the view hint, which is dropped for a draft: ReadMessageItem
+ * asks for the reading pane, and a draft wants the composer.
  */
 export function outlookWebLink(itemId: string, kind: "message" | "draft" = "message", host = "outlook.office365.com"): string {
-  if (kind === "draft") {
-    return `https://outlook.office.com/mail/drafts/id/${encodeURIComponent(toBase64Url(itemId))}`;
-  }
-  return `https://${host}/owa/?ItemID=${encodeURIComponent(fromBase64Url(itemId))}&exvsurl=1&viewmodel=ReadMessageItem`;
+  const owa = `https://${host}/owa/?ItemID=${encodeURIComponent(fromBase64Url(itemId))}&exvsurl=1`;
+  return kind === "draft" ? owa : `${owa}&viewmodel=ReadMessageItem`;
 }
 
-/** The mobile app handoff. Field-confirmed to open the message on iOS/Android. */
-export function outlookMobileLink(itemId: string, kind: "message" | "draft" = "message"): string {
-  const path = kind === "draft" ? "emails/drafts" : "emails/message";
-  return `ms-outlook://${path}?restId=${encodeURIComponent(toBase64Url(itemId))}`;
+/** Where a draft lives when its own id is unknown: the folder, not a blank composer. */
+export function outlookDraftsFolder(): string {
+  return "https://outlook.office.com/mail/drafts";
+}
+
+/**
+ * The mobile app handoff. Field-confirmed to open the message on iOS/Android.
+ *
+ * Only `emails/message` exists here on purpose: the `emails/drafts` variant
+ * this used to emit opened the app on "message not found", so a draft's app
+ * link is the SOURCE message id instead — the reply draft is waiting inside
+ * that conversation anyway.
+ */
+export function outlookMobileLink(itemId: string): string {
+  return `ms-outlook://emails/message?restId=${encodeURIComponent(toBase64Url(itemId))}`;
 }
 
 /**
@@ -220,6 +259,11 @@ export function assertSafeMailLink(url: string, opts: { allowOutlookScheme?: boo
   if (OUTLOOK_READ_DEEPLINK.test(url)) {
     throw new Error(
       `Unsafe Outlook link (mail/deeplink/read — field-tested as not resolving to the thread): ${url} — keep the connector's webLink, or build the owa form with outlookWebLink(), or run it through normalizeMailLink().`,
+    );
+  }
+  if (isCustomScheme(url) && !isVerifiedScheme(url)) {
+    throw new Error(
+      `Unverified app-scheme link: ${url} — only shapes proven on a real device are stored (ms-outlook://emails/message, googlegmail:///cv=, msteams:/l/, slack://channel, zoommtg://). Send the https link instead; it always opens.`,
     );
   }
   if (OUTLOOK_SCHEME.test(url) && !opts.allowOutlookScheme) {
