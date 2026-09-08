@@ -147,7 +147,10 @@ describe("tools", () => {
     });
     const task = await prisma.task.findFirstOrThrow({ where: { userId: actor.user.id } });
 
-    await call("attach_draft", { id: task.id, provider: "gmail", externalId: "draft-9", body: "Hi Marta…" });
+    const missingId: any = await call("attach_draft", { provider: "gmail", externalId: "draft-9", verifiedAt: new Date().toISOString(), threadId: "t-marta", account: "j@w.com" });
+    expect(missingId.result.isError).toBe(true);
+    expect(await prisma.draft.count({ where: { taskId: task.id } })).toBe(0);
+    await call("attach_draft", { id: task.id, provider: "gmail", externalId: "draft-9", body: "Hi Marta…", verifiedAt: new Date().toISOString(), threadId: "t-marta", account: "j@w.com" });
     const draft = await prisma.draft.findFirstOrThrow({ where: { taskId: task.id } });
     expect(draft.body).toBe("Hi Marta…");
     // A reply draft lives inside its conversation, so the button opens the
@@ -157,7 +160,7 @@ describe("tools", () => {
     expect(draft.mobileUrl).toBe("googlegmail:///cv=t-marta");
   });
 
-  it("falls back to the drafts folder when the task has no thread id", async () => {
+  it("refuses attach_draft without a verified saved conversation", async () => {
     await call("create_task", {
       title: "Reply to nobody in particular",
       bucket: "urgent_not_priority",
@@ -165,10 +168,26 @@ describe("tools", () => {
     });
     const task = await prisma.task.findFirstOrThrow({ where: { userId: actor.user.id, sourceExternalId: "loose-1" } });
 
-    await call("attach_draft", { id: task.id, provider: "gmail", externalId: "draft-2", body: "Hello…" });
-    const draft = await prisma.draft.findFirstOrThrow({ where: { taskId: task.id } });
-    expect(draft.webUrl).toContain("#drafts");
-    expect(draft.webUrl).not.toContain("compose=");
+    const response: any = await call("attach_draft", { id: task.id, provider: "gmail", externalId: "draft-2", body: "Hello…" });
+    expect(response.result.isError).toBe(true);
+    expect(await prisma.draft.count({ where: { taskId: task.id } })).toBe(0);
+  });
+
+  it("detaches a stale draft without completing or deleting its task", async () => {
+    const task = await prisma.task.create({ data: { userId: actor.user.id, title: "Still needs a reply", bucket: "urgent_important", draft: { create: { provider: "gmail", externalId: "gone", verifiedAt: new Date() } } } });
+    const res: any = await call("detach_draft", { id: task.id, reason: "deleted" });
+    expect(res.result.isError).not.toBe(true);
+    expect(await prisma.draft.count({ where: { taskId: task.id } })).toBe(0);
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: task.id } })).status).toBe("open");
+    expect(await prisma.suppression.count()).toBe(0);
+  });
+
+  it("refuses to detach another user's draft or treat a connector error as deletion", async () => {
+    const other = await prisma.user.create({ data: { email: "other@example.test", passwordHash: "test-only" } });
+    const task = await prisma.task.create({ data: { userId: other.id, title: "Private", bucket: "urgent_important", draft: { create: { provider: "gmail", externalId: "keep" } } } });
+    expect((await call("detach_draft", { id: task.id, reason: "deleted" }) as any).result.isError).toBe(true);
+    expect((await call("detach_draft", { id: task.id, reason: "connector_error" }) as any).result.isError).toBe(true);
+    expect(await prisma.draft.count({ where: { taskId: task.id } })).toBe(1);
   });
 
   it("refuses a draft with nowhere to point", async () => {

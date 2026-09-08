@@ -4,6 +4,7 @@ import { normalizeBucket } from "./buckets";
 import { normalizeProvider } from "./providers";
 import { deriveLinkTarget, defaultLabel, hasAnyUrl } from "./deeplinks";
 import { assertSafeMailLink } from "./mail-links";
+import { prepareDraft } from "./drafts";
 import { listTeam, resolveDelegate, type TeamMemberDTO } from "./team";
 import { SUPPRESSION_REASON, suppressionMap } from "./suppression";
 import { stringifyTags } from "./tasks";
@@ -84,6 +85,9 @@ function buildLinkRows(input: TaskInput): Prisma.TaskLinkCreateWithoutTaskInput[
     if (hasAnyUrl(target)) {
       rows.push({
         kind: "source",
+        externalId: source.externalId ?? null,
+        threadId: source.threadId ?? null,
+        account: source.account ?? null,
         label: defaultLabel(sourceProvider, "source"),
         provider: sourceProvider,
         webUrl: safeUrl(target.web, "web"),
@@ -96,15 +100,18 @@ function buildLinkRows(input: TaskInput): Prisma.TaskLinkCreateWithoutTaskInput[
   }
 
   for (const [i, link] of (input.links ?? []).entries()) {
-    const provider = normalizeProvider(link.provider ?? source?.provider);
+    const rawProvider = normalizeProvider(link.provider ?? source?.provider);
+    const provider = link.kind === "calendar" && rawProvider === "outlook" ? "outlook_calendar" : link.kind === "calendar" && rawProvider === "gmail" ? "google_calendar" : rawProvider;
+    const sameSource = link.kind === "source" && rawProvider === sourceProvider && (!link.externalId || link.externalId === source?.externalId);
+    const account = link.account ?? (rawProvider === sourceProvider ? source?.account : undefined);
     const target = deriveLinkTarget({
       provider,
       externalId: link.externalId,
       messageId: link.messageId,
-      threadId: link.threadId ?? source?.threadId,
-      account: link.account ?? source?.account,
+      threadId: link.threadId ?? (sameSource ? source?.threadId : undefined),
+      account,
       accountIndex: link.accountIndex ?? source?.accountIndex,
-      anchorItemId: source?.externalId,
+      anchorItemId: link.kind === "draft" ? source?.externalId : undefined,
       passcode: link.passcode,
       kind: link.kind === "draft" ? "draft" : link.kind === "calendar" ? "event" : "message",
       web: link.web,
@@ -118,6 +125,9 @@ function buildLinkRows(input: TaskInput): Prisma.TaskLinkCreateWithoutTaskInput[
 
     rows.push({
       kind: link.kind,
+      externalId: link.externalId ?? null,
+      threadId: link.threadId ?? null,
+      account: account ?? null,
       label: link.label ?? defaultLabel(provider, link.kind),
       provider,
       webUrl: safeUrl(target.web, "web"),
@@ -129,43 +139,6 @@ function buildLinkRows(input: TaskInput): Prisma.TaskLinkCreateWithoutTaskInput[
   }
 
   return rows;
-}
-
-function buildDraftRow(input: TaskInput): Prisma.DraftCreateWithoutTaskInput | null {
-  const d = input.draft;
-  if (!d) return null;
-  // A draft the agent can neither show nor point at is a phantom — the
-  // thread/folder fallbacks below would happily give it a button, so the
-  // existence check comes first: some body, id, or URL, or no draft at all.
-  if (!d.body && !d.externalId && !d.url && !d.web && !d.desktop && !d.mobile) return null;
-  const provider = normalizeProvider(d.provider ?? input.source?.provider);
-  const target = deriveLinkTarget({
-    provider,
-    externalId: d.externalId,
-    account: input.source?.account,
-    accountIndex: input.source?.accountIndex,
-    // A reply draft lives inside the conversation it answers, so its links
-    // aim at that thread: the Gmail thread id for web + app, and the source
-    // message's Graph id for the Outlook app handoff.
-    threadId: input.source?.threadId,
-    anchorItemId: input.source?.externalId,
-    kind: "draft",
-    web: d.web ?? d.url,
-    desktop: d.desktop,
-    mobile: d.mobile,
-  });
-  if (!hasAnyUrl(target) && !d.body) return null;
-
-  return {
-    provider,
-    kind: d.kind,
-    subject: d.subject ?? null,
-    body: d.body ?? null,
-    externalId: d.externalId ?? null,
-    webUrl: safeUrl(target.web, "web"),
-    desktopUrl: safeUrl(target.desktop, "app"),
-    mobileUrl: safeUrl(target.mobile, "app"),
-  };
 }
 
 function taskFields(input: TaskInput, runId: string | null, team: TeamMemberDTO[] = []) {
@@ -270,7 +243,8 @@ export async function syncTasks(
 
   const seenKeys = new Set<string>();
 
-  for (const raw of input.tasks) {
+  for (const incoming of input.tasks) {
+    let raw = incoming;
     const sourceKey = deriveSourceKey(raw);
 
     // Two entries in one batch pointing at the same message: keep the first.
@@ -290,6 +264,29 @@ export async function syncTasks(
       continue;
     }
 
+    const existing = await prisma.task.findUnique({ where: { userId_sourceKey: { userId, sourceKey } }, include: { draft: true, links: true } });
+    // A follow-up sweep often omits metadata it fetched on the previous run.
+    // Keep known identities for this same source; never cross providers/accounts.
+    const sameSource = existing && (!raw.source?.provider || normalizeProvider(raw.source.provider) === existing.sourceProvider) &&
+      (!raw.source?.account || raw.source.account.toLowerCase() === existing.sourceAccount?.toLowerCase()) &&
+      (!raw.source?.externalId || raw.source.externalId === existing.sourceExternalId);
+    if (sameSource) {
+      const sourceLink = existing.links.find(l => l.kind === "source" && l.provider === existing.sourceProvider);
+      raw = { ...raw, source: {
+      ...raw.source,
+      provider: raw.source?.provider ?? existing.sourceProvider ?? undefined,
+      type: raw.source?.type ?? existing.sourceType ?? undefined,
+      externalId: raw.source?.externalId ?? existing.sourceExternalId ?? undefined,
+      threadId: raw.source?.threadId ?? existing.sourceThreadId ?? undefined,
+      messageId: raw.source?.messageId ?? existing.sourceMessageId ?? undefined,
+      account: raw.source?.account ?? existing.sourceAccount ?? undefined,
+      from: raw.source?.from ?? existing.sourceFrom ?? undefined,
+      subject: raw.source?.subject ?? existing.sourceSubject ?? undefined,
+      snippet: raw.source?.snippet ?? existing.sourceSnippet ?? undefined,
+      receivedAt: raw.source?.receivedAt ?? existing.sourceReceivedAt ?? undefined,
+      webUrl: raw.source?.webUrl ?? raw.source?.url ?? sourceLink?.webUrl ?? undefined,
+    } };
+    }
     const fields = taskFields(raw, runId, team);
 
     // The instructions the assistant is holding were written when it connected,
@@ -306,9 +303,20 @@ export async function syncTasks(
       result.linkGaps.push({ title: raw.title, missing: "source.threadId" });
     }
     const links = buildLinkRows(raw);
-    const draft = buildDraftRow(raw);
-
-    const existing = await prisma.task.findUnique({ where: { userId_sourceKey: { userId, sourceKey } } });
+    // Omitted extra links mean "not re-fetched"; an explicit [] removes them.
+    if (sameSource && raw.links === undefined) {
+      for (const link of existing.links.filter(l => l.kind !== "source" && l.kind !== "draft")) {
+        const { id: _id, taskId: _taskId, ...row } = link;
+        links.push(row);
+      }
+    }
+    const prepared = prepareDraft(raw);
+    // A new suggestion must not replace a saved draft reference or user edits.
+    const draft = !prepared.row?.verifiedAt && sameSource && existing?.draft?.verifiedAt ? null : prepared.row;
+    if (prepared.issue) result.linkGaps.push({ title: raw.title, missing: prepared.issue });
+    if (fields.sourceProvider === "gmail" && !fields.sourceAccount?.includes("@")) {
+      result.linkGaps.push({ title: raw.title, missing: "source.account" });
+    }
 
     if (input.dryRun) {
       if (!existing) {
@@ -357,7 +365,7 @@ export async function syncTasks(
             ? "open"
             : existing.status;
 
-      await prisma.$transaction([
+      const writes: Prisma.PrismaPromise<unknown>[] = [
         prisma.taskLink.deleteMany({ where: { taskId: existing.id } }),
         prisma.task.update({
           where: { id: existing.id },
@@ -378,8 +386,11 @@ export async function syncTasks(
                 update: draft,
               }),
             ]
-          : []),
-      ]);
+          : !sameSource && existing.draft
+            ? [prisma.draft.deleteMany({ where: { taskId: existing.id } })]
+            : []),
+      ];
+      await prisma.$transaction(writes);
 
       if (unchanged) result.unchanged += 1;
       else result.updated += 1;
@@ -431,11 +442,7 @@ export async function syncTasks(
   result.message = parts.join(", ") + ".";
 
   if (result.linkGaps.length > 0) {
-    const titles = result.linkGaps.slice(0, 3).map((g) => `"${g.title}"`).join(", ");
-    result.message +=
-      ` ${result.linkGaps.length} Gmail task(s) arrived without source.threadId (${titles}${result.linkGaps.length > 3 ? ", …" : ""}).` +
-      " Gmail's thread id is the only id that opens the conversation — in the browser AND in the Gmail app, which refuses a message id." +
-      " Every messages.get returns threadId: send it on the next run and those buttons start landing on the thread.";
+    result.message += ` Some actions need repair: ${result.linkGaps.slice(0, 3).map(g => g.missing).join("; ")}. Read linkGaps, fetch the missing identities or save and verify the drafts, then repair those tasks with replace='none'. Do not report the list as fully ready while these gaps remain.`;
   }
 
   if (result.unknownDelegates.length > 0) {

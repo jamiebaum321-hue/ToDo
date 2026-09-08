@@ -282,6 +282,10 @@ model TaskLink {
   mobileUrl  String?
   isPrimary  Boolean @default(false)
   position   Int     @default(0)
+  /// Identity belongs to this link, which may point at a different conversation.
+  externalId String?
+  threadId   String?
+  account    String?
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
@@ -297,6 +301,13 @@ model Draft {
   subject    String?
   body       String?
   externalId String?
+  /// Set only after the assistant reads the saved draft back from the provider.
+  verifiedAt DateTime?
+  /// Drafts for forwards/new mail must carry their OWN conversation and mailbox.
+  threadId   String?
+  account    String?
+  replyToId  String?
+  to         String?
   webUrl     String?
   desktopUrl String?
   mobileUrl  String?

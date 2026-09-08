@@ -116,7 +116,7 @@ export const TaskCard = memo(function TaskCard({ task, showReason, onOpen, onCom
                 style={{ color: "var(--accent-delegate)", background: "var(--tint-delegate)" }}
               >
                 <PenLine className="size-[12px]" strokeWidth={2.6} />
-                Draft ready
+                {task.draft.ready ? "Draft ready" : "Suggested response"}
               </span>
             ) : null}
           </div>

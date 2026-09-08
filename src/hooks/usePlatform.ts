@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { detectPlatform, type Platform } from "@/lib/deeplinks";
+import { nativeInfo } from "@/lib/client/native";
 
 /**
  * Platform is only knowable in the browser, so the first render deliberately
@@ -19,7 +20,9 @@ export function usePlatform(): { platform: Platform; standalone: boolean; ready:
     const standalone =
       window.matchMedia("(display-mode: standalone)").matches ||
       (window.navigator as any).standalone === true;
-    setState({ platform: detectPlatform(navigator.userAgent), standalone, ready: true });
+    const native = nativeInfo();
+    const platform = native.native && native.platform !== "web" ? native.platform : detectPlatform(navigator.userAgent);
+    setState({ platform, standalone: standalone || native.native, ready: true });
   }, []);
 
   return state;

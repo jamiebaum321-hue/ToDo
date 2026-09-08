@@ -1,3 +1,4 @@
+import { ACTION_GUIDANCE } from "./action-guidance";
 import { BUCKETS } from "../buckets";
 
 const BUCKET_GUIDE = BUCKETS.map((b) => `- **${b.label}** (\`${b.key}\`) — ${b.blurb}`).join("\n");
@@ -40,10 +41,12 @@ Be honest about the difference between urgent and important. Something with a de
 - **dueAt** — only when there is a real deadline.
 
 **5. Draft the replies you can.**
-Where a task is "reply to X" and the answer is straightforward, write the reply, save it to the user's drafts, and pass the draft's id and URL in the \`draft\` field. The task then shows a "See your draft" button — the user reads it, sends it, done. Do not send anything yourself.
+Follow \`houseRules.writeDrafts\` from the current context. When enabled and the answer is straightforward, save the reply inside its source conversation, read it back, and pass the verified draft identity in the \`draft\` field. The task then offers "Open draft". The user reviews and sends it; opening a link does not prove sending or completion. Do not send anything yourself.
+
+${ACTION_GUIDANCE}
 
 **6. Send it in one call.**
-One \`sync_tasks\` call with the complete list and \`replace: "window"\`. Anything you leave out gets cleared, which is how the list stays current instead of growing forever.
+After a complete sweep of all available connectors, one \`sync_tasks\` call with the complete list and \`replace: "window"\`. If any source could not be checked, use \`replace: "none"\`. Anything you leave out gets cleared, which is how the list stays current instead of growing forever.
 
 **7. Read what comes back.**
 The response includes \`skippedTasks\` — anything the app refused because the user had already handled it. That is your feedback signal. Note those source keys and do not raise them again.${

@@ -69,8 +69,8 @@ describe("what the connection tells the assistant", () => {
     const text = await buildInstructions(actor);
     // The app never reads a mailbox, so "write drafts" is only ever an
     // instruction to whoever holds the connection.
-    expect(text).toContain("WRITE IT");
-    expect(text).toContain("whether or not the prompt asked for drafts");
+    expect(text).toContain("save it as a reply draft on the source conversation, read it back");
+    expect(text).toContain("Draft preparation is enabled even if this run's prompt does not mention it");
     expect(text).toContain("14-day window");
   });
 
@@ -78,7 +78,7 @@ describe("what the connection tells the assistant", () => {
     await prisma.settings.update({ where: { userId }, data: { requestDrafts: false } });
     const text = await buildInstructions(actor);
     expect(text).toContain("Do not write draft replies");
-    expect(text).not.toContain("WRITE IT");
+    expect(text).not.toContain("Draft preparation is enabled even if this run's prompt does not mention it");
   });
 
   it("follows the rolling window the user picked", async () => {

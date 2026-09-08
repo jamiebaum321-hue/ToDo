@@ -6,7 +6,6 @@ import {
   isOutlookScheme,
   isVerifiedScheme,
   normalizeMailLink,
-  outlookDraftsFolder,
   outlookMobileLink,
   outlookWebLink,
   parseOutlookWebLink,
@@ -84,13 +83,15 @@ function slackAppFromWeb(web?: string) {
  * explicitly provided.
  */
 export function deriveLinkTarget(input: DeriveInput): LinkTarget {
-  const provider = normalizeProvider(input.provider);
+  let provider = normalizeProvider(input.provider);
   const web = clean(input.web);
   const desktop = clean(input.desktop);
   const mobile = clean(input.mobile);
   const id = clean(input.externalId);
   const u = typeof input.accountIndex === "number" && input.accountIndex >= 0 ? input.accountIndex : 0;
   const kind = (input.kind ?? "message").toLowerCase();
+  if (kind === "event" && provider === "outlook") provider = "outlook_calendar";
+  if (kind === "event" && provider === "gmail") provider = "google_calendar";
 
   const out: LinkTarget = { web, desktop, mobile };
 
@@ -108,9 +109,6 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
 
       if (!out.web && itemId) {
         out.web = outlookWebLink(itemId, kind === "draft" ? "draft" : "message");
-      } else if (!out.web && kind === "draft") {
-        // No draft id: the folder is honest, a blank composer is not.
-        out.web = outlookDraftsFolder();
       }
       if (!out.mobile) {
         // Field-confirmed: emails/message opens the app on the conversation,
@@ -141,7 +139,7 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
       break;
     }
     case "gmail": {
-      if (!out.web) {
+      if (input.threadId || !out.web) {
         out.web =
           buildGmailWebUrl({
             messageId: clean(input.messageId),
@@ -279,19 +277,20 @@ export function chooseUrl(
   const desktop = clean(target.desktop) ?? null;
   const mobile = clean(target.mobile) ?? null;
 
-  if (preference === "web") return web ?? mobile ?? desktop;
+  if (preference === "web") return web;
 
   const native = isMobilePlatform(platform) ? mobile : desktop;
-  if (preference === "app") return native ?? web ?? mobile ?? desktop;
+  if (preference === "app") return native ?? web;
 
   // auto
-  if (isMobilePlatform(platform)) return mobile ?? web ?? desktop;
+  if (isMobilePlatform(platform)) return mobile ?? web;
   // On a desktop, a custom scheme is a gamble: new Outlook answers it, classic
   // Outlook ignores it silently. Default to the web app — which is signed in
   // for anyone who uses it — and let the "open in the app instead" control and
   // the app preference reach the scheme deliberately, with the fallback ready.
+  if (desktop && /^msteams:/i.test(desktop)) return desktop;
   if (desktop && !/^https?:\/\//i.test(desktop) && web) return web;
-  return desktop ?? web ?? mobile;
+  return desktop ?? web;
 }
 
 /**
