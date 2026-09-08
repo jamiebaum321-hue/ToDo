@@ -13,7 +13,7 @@ import {
   outlookSchemeFromWeb,
   toOutlookRestId,
 } from "./mail-links";
-import { providerMeta } from "./providers";
+import { providerMeta, resolveLinkProvider } from "./providers";
 
 export const TASK_STATUSES = ["open", "completed", "dismissed", "snoozed", "delegated"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
@@ -124,13 +124,14 @@ interface MailIds {
 }
 
 function serializeLink(link: TaskLink, ids: MailIds): TaskLinkDTO {
-  const meta = providerMeta(link.provider);
+  const provider = resolveLinkProvider(link.provider ?? ids.provider, link.webUrl);
+  const meta = providerMeta(provider);
   const sameSource = link.kind === "source" && (!link.provider || link.provider === ids.provider) && (!link.externalId || link.externalId === ids.outlookItemId);
   return {
     id: link.id,
     kind: link.kind,
     label: link.label,
-    provider: link.provider,
+    provider,
     providerLabel: meta.label,
     accent: meta.accent,
     // Rows stored before mail-links.ts existed carry the raw Graph webLink and
@@ -139,7 +140,7 @@ function serializeLink(link: TaskLink, ids: MailIds): TaskLinkDTO {
     // normalize and the scheme derivation are idempotent, so fixing them here
     // costs nothing on clean rows and spares a data migration.
     ...mailSlots(link.webUrl, link.desktopUrl, link.mobileUrl, {
-      provider: link.provider ?? ids.provider, kind: link.kind,
+      provider, kind: link.kind,
       threadId: link.threadId ?? (sameSource ? ids.threadId : null),
       account: link.account ?? (sameSource ? ids.account : null),
       outlookItemId: link.externalId ?? (sameSource ? ids.outlookItemId : null),
@@ -350,12 +351,12 @@ export function serializeTaskForAgent(task: TaskWithRelations) {
     } : null,
     actionIssues: dto.actionIssues,
     links: (task.links ?? []).filter(l => l.kind !== "draft").map((l) => {
-      const { web, desktop, mobile } = serializeLink(l, {
+        const { web, desktop, mobile, provider } = serializeLink(l, {
         provider: task.sourceProvider, threadId: task.sourceThreadId,
         account: task.sourceAccount, outlookItemId: task.sourceExternalId,
       });
       return {
-        kind: l.kind, label: l.label, provider: l.provider,
+          kind: l.kind, label: l.label, provider,
         externalId: l.externalId, threadId: l.threadId, account: l.account,
         web, desktop, mobile,
       };

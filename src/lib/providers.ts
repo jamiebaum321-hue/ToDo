@@ -107,3 +107,10 @@ export function normalizeProvider(input: unknown): ProviderKey {
 export function providerMeta(input: unknown): ProviderMeta {
   return PROVIDERS[normalizeProvider(input)];
 }
+
+/** A meeting's Teams destination can arrive carrying its calendar's provider. */
+export function resolveLinkProvider(input: unknown, web?: string | null): ProviderKey {
+  return /^https:\/\/teams\.microsoft\.com\/l\//i.test(web?.trim() ?? "")
+    ? "teams"
+    : normalizeProvider(input);
+}

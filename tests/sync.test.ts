@@ -392,6 +392,31 @@ describe("rows stored before mail-links.ts existed", () => {
 });
 
 describe("the shapes found on a live account", () => {
+  it("repairs existing Teams join links without changing their calendar destination", async () => {
+    const calendar = "https://outlook.office365.com/owa/?itemid=calendar1&path=/calendar/item";
+    const join = "https://teams.microsoft.com/l/meetup-join/19%3Ameeting%40thread.v2/0?context=%7B%22Tid%22%3A%22tenant%22%7D";
+    await sync([{
+      title: "Prepare for the staff meeting", bucket: "urgent_important",
+      source: { provider: "outlook_calendar", type: "meeting", externalId: "calendar1", url: calendar },
+      links: [{ kind: "join", web: join, mobile: join }],
+    }]);
+    const created = await prisma.task.findFirstOrThrow({ where: { userId }, include: taskInclude });
+    const joinRow = created.links.find(l => l.kind === "join")!;
+    expect(joinRow.provider).toBe("teams");
+    expect(joinRow.desktopUrl).toMatch(/^msteams:/);
+    // The live rows predate this repair and inherited outlook_calendar.
+    await prisma.taskLink.update({ where: { id: joinRow.id }, data: { provider: "outlook_calendar", desktopUrl: null, mobileUrl: join } });
+    const task = await prisma.task.findUniqueOrThrow({ where: { id: created.id }, include: taskInclude });
+    const dto = serializeTask(task);
+    const meeting = dto.links.find(l => l.kind === "join")!;
+    expect(meeting.provider).toBe("teams");
+    expect(meeting.desktop).toBe(join.replace("https://teams.microsoft.com/", "msteams:/"));
+    expect(meeting.mobile).toBe(meeting.desktop);
+    expect(meeting.web).toBe(join);
+    expect(dto.links.find(l => l.kind === "source")?.mobile).toBe(calendar);
+    expect(dto.status).toBe("open");
+  });
+
   it("drops an app link the agent invented, keeping the browser link that works", async () => {
     // Verbatim from a real account: the agent supplied this itself — the app
     // never builds it — and on a phone it opened Outlook on the wrong screen

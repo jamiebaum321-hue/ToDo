@@ -1,4 +1,4 @@
-import { normalizeProvider, type ProviderKey } from "./providers";
+import { normalizeProvider, resolveLinkProvider, type ProviderKey } from "./providers";
 import {
   buildGmailWebUrl,
   gmailMobileLink,
@@ -83,7 +83,7 @@ function slackAppFromWeb(web?: string) {
  * explicitly provided.
  */
 export function deriveLinkTarget(input: DeriveInput): LinkTarget {
-  let provider = normalizeProvider(input.provider);
+  let provider = resolveLinkProvider(input.provider, input.web);
   const web = clean(input.web);
   const desktop = clean(input.desktop);
   const mobile = clean(input.mobile);
@@ -162,8 +162,8 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
     }
     case "teams": {
       if (!out.web && id && /^https?:/i.test(id)) out.web = id;
-      if (!out.desktop) out.desktop = teamsDesktopFromWeb(out.web ?? undefined);
-      if (!out.mobile) out.mobile = out.desktop ?? out.web ?? undefined;
+      if (!out.desktop || out.desktop === out.web) out.desktop = teamsDesktopFromWeb(out.web ?? undefined);
+      if (!out.mobile || out.mobile === out.web) out.mobile = out.desktop ?? out.web ?? undefined;
       break;
     }
     case "zoom": {
