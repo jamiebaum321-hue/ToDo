@@ -1,5 +1,7 @@
 import type { Draft, Prisma, Task, TaskLink } from "@prisma/client";
 import { getBucket, type BucketKey } from "./buckets";
+import { deriveLinkTarget } from "./deeplinks";
+import { isReplyDraft } from "./drafts";
 import {
   buildGmailWebUrl,
   gmailMobileLink,
@@ -73,6 +75,7 @@ export interface TaskDTO {
     receivedAt: string | null;
   };
   links: TaskLinkDTO[];
+  actionIssues: string[];
   draft: {
     id: string;
     provider: string;
@@ -80,6 +83,9 @@ export interface TaskDTO {
     kind: string;
     subject: string | null;
     body: string | null;
+    ready: boolean;
+    to: string | null;
+    verifiedAt: string | null;
     web: string | null;
     desktop: string | null;
     mobile: string | null;
@@ -118,6 +124,7 @@ interface MailIds {
 
 function serializeLink(link: TaskLink, ids: MailIds): TaskLinkDTO {
   const meta = providerMeta(link.provider);
+  const sameSource = link.kind === "source" && (!link.provider || link.provider === ids.provider) && (!link.externalId || link.externalId === ids.outlookItemId);
   return {
     id: link.id,
     kind: link.kind,
@@ -130,7 +137,12 @@ function serializeLink(link: TaskLink, ids: MailIds): TaskLinkDTO {
     // copy of the web link, which is why phones were never offered the app.
     // normalize and the scheme derivation are idempotent, so fixing them here
     // costs nothing on clean rows and spares a data migration.
-    ...mailSlots(link.webUrl, link.desktopUrl, link.mobileUrl, { ...ids, provider: link.provider ?? ids.provider, kind: link.kind }),
+    ...mailSlots(link.webUrl, link.desktopUrl, link.mobileUrl, {
+      provider: link.provider ?? ids.provider, kind: link.kind,
+      threadId: link.threadId ?? (sameSource ? ids.threadId : null),
+      account: link.account ?? (sameSource ? ids.account : null),
+      outlookItemId: link.externalId ?? (sameSource ? ids.outlookItemId : null),
+    }),
     isPrimary: link.isPrimary,
   };
 }
@@ -151,7 +163,7 @@ const isGmailComposeUrl = (u: string | null) => !!u && isGmailUrl(u) && /[?&#]co
  * - A rfc822msgid search lands on a results list, so with a thread id known
  *   the web link is rebuilt to land ON the conversation.
  * - `#drafts?compose=<draft id>` opened an empty composer; with no thread id
- *   to aim at, the drafts LIST is the honest destination.
+ *   to aim at, do not advertise an exact draft action.
  * - A reply draft lives inside its conversation, so draft buttons aim there:
  *   Gmail web + app via the thread, the Outlook app via the SOURCE message.
  *   A draft never derives its app link from its own web link — that produced
@@ -159,8 +171,8 @@ const isGmailComposeUrl = (u: string | null) => !!u && isGmailUrl(u) && /[?&#]co
  * - Only app schemes proven on a device survive at all (isVerifiedScheme);
  *   an agent-supplied ms-outlook://events/open was found live, opening
  *   Outlook on the wrong screen. The https link always works, so it wins.
- * - The desktop slot never carries a scheme: new Outlook on Windows opens
- *   and then refuses them.
+ * - Outlook message schemes are omitted on desktop. Teams retains its app
+ *   permalink, with the corresponding web link available as an alternative.
  */
 function mailSlots(webUrl: string | null, desktopUrl: string | null, mobileUrl: string | null, ids: MailIds = {}) {
   let web = normalizeMailLink(webUrl);
@@ -173,7 +185,7 @@ function mailSlots(webUrl: string | null, desktopUrl: string | null, mobileUrl: 
   const isCalendar =
     ids.kind === "calendar" ||
     (ids.provider ?? "").endsWith("_calendar") ||
-    /[?&]path=\/calendar/i.test(web ?? "");
+    /(?:[?&]path=(?:%2f|\/)calendar|\/calendar\/)/i.test(web ?? "");
 
   if (gmailish && (web === null || isGmailUrl(web))) {
     const rebuilt = buildGmailWebUrl({
@@ -201,10 +213,11 @@ function mailSlots(webUrl: string | null, desktopUrl: string | null, mobileUrl: 
   if (isDraft && isCustomScheme(storedMobile) && storedMobile !== scheme) storedMobile = null;
 
   const storedDesktop = real(desktopUrl) ?? desktopUrl;
+  const teams = ids.provider === "teams" ? deriveLinkTarget({ provider: "teams", web }) : null;
   return {
     web,
-    desktop: isCustomScheme(storedDesktop) ? null : storedDesktop,
-    mobile: storedMobile ?? scheme ?? (isCustomScheme(mobileUrl) ? web : mobileUrl),
+    desktop: (isCustomScheme(storedDesktop) && (/^ms-outlook:/i.test(storedDesktop ?? "") || !isVerifiedScheme(storedDesktop)) ? null : storedDesktop) ?? teams?.desktop ?? null,
+    mobile: isCalendar ? web : storedMobile ?? scheme ?? teams?.mobile ?? (isCustomScheme(mobileUrl) ? web : mobileUrl),
   };
 }
 
@@ -218,6 +231,15 @@ export function serializeTask(task: TaskWithRelations, opts?: { includeDrafts?: 
     account: task.sourceAccount,
     outlookItemId: task.sourceExternalId,
   };
+  const reply = task.draft ? isReplyDraft(task.draft.kind) : false;
+  const d = task.draft;
+  const sameMailbox = d?.provider === task.sourceProvider && (!task.sourceAccount || d?.account?.toLowerCase() === task.sourceAccount.toLowerCase());
+  const sameConversation = !reply || (sameMailbox && (d?.provider === "gmail" ? d.threadId === task.sourceThreadId : d?.provider === "outlook" ? d.replyToId === task.sourceExternalId : true));
+  const draftReady = !!(d?.verifiedAt && d.externalId && d.webUrl && sameConversation);
+  const actionIssues: string[] = [];
+  if (task.sourceProvider === "gmail" && !task.sourceThreadId) actionIssues.push("The exact Gmail conversation is missing. Ask your assistant to repair this task's email link.");
+  if (task.sourceProvider === "gmail" && !task.sourceAccount?.includes("@")) actionIssues.push("The Gmail mailbox is missing. Your assistant needs to add the account containing this email.");
+  if (task.draft && !draftReady) actionIssues.push("This response has not been verified in your mailbox. Your assistant needs to save and check the draft.");
 
   return {
     id: task.id,
@@ -253,7 +275,8 @@ export function serializeTask(task: TaskWithRelations, opts?: { includeDrafts?: 
       snippet: task.sourceSnippet,
       receivedAt: task.sourceReceivedAt?.toISOString() ?? null,
     },
-    links: (task.links ?? []).filter((l) => showDrafts || l.kind !== "draft").map((l) => serializeLink(l, ids)),
+    actionIssues,
+    links: (task.links ?? []).filter((l) => l.kind !== "draft").map((l) => serializeLink(l, ids)),
     draft:
       task.draft && showDrafts
         ? {
@@ -263,14 +286,19 @@ export function serializeTask(task: TaskWithRelations, opts?: { includeDrafts?: 
             kind: task.draft.kind,
             subject: task.draft.subject,
             body: task.draft.body,
+            ready: draftReady,
+            to: task.draft.to,
+            verifiedAt: task.draft.verifiedAt?.toISOString() ?? null,
             // A reply draft rides its thread, so the draft button gets the
             // same repairs as the source button — and on a phone it opens
             // the conversation in the app, where the draft is waiting.
-            ...mailSlots(task.draft.webUrl, task.draft.desktopUrl, task.draft.mobileUrl, {
-              ...ids,
+            ...(draftReady ? mailSlots(task.draft.webUrl, task.draft.desktopUrl, task.draft.mobileUrl, {
+              threadId: task.draft.threadId,
+              account: task.draft.account,
+              outlookItemId: reply ? task.draft.replyToId : null,
               provider: task.draft.provider ?? ids.provider,
               kind: "draft",
-            }),
+            }) : { web: null, desktop: null, mobile: null }),
           }
         : null,
   };
@@ -281,6 +309,7 @@ export function serializeTask(task: TaskWithRelations, opts?: { includeDrafts?: 
  * and a smaller payload means it can read more tasks before running out of room.
  */
 export function serializeTaskForAgent(task: TaskWithRelations) {
+  const dto = serializeTask(task);
   return {
     id: task.id,
     sourceKey: task.sourceKey,
@@ -306,19 +335,26 @@ export function serializeTaskForAgent(task: TaskWithRelations) {
       subject: task.sourceSubject,
       receivedAt: task.sourceReceivedAt?.toISOString() ?? null,
     },
-    hasDraft: Boolean(task.draft),
-    links: (task.links ?? []).map((l) => ({
-      kind: l.kind,
-      label: l.label,
-      provider: l.provider,
-      ...mailSlots(l.webUrl, l.desktopUrl, l.mobileUrl, {
-        provider: l.provider ?? task.sourceProvider,
-        threadId: task.sourceThreadId,
-        account: task.sourceAccount,
-        outlookItemId: task.sourceExternalId,
-        kind: l.kind,
-      }),
-    })),
+    hasDraft: dto.draft?.ready ?? false,
+    draft: task.draft ? {
+      provider: task.draft.provider, kind: task.draft.kind, externalId: task.draft.externalId,
+      threadId: task.draft.threadId, account: task.draft.account, replyToId: task.draft.replyToId,
+      to: task.draft.to, verifiedAt: task.draft.verifiedAt?.toISOString() ?? null,
+      body: task.draft.body, subject: task.draft.subject,
+      guidance: "Read this existing draft before creating another. Preserve user edits. Repair an unverified draft using attach_draft after saving and reading it back from the provider.",
+    } : null,
+    actionIssues: dto.actionIssues,
+    links: (task.links ?? []).filter(l => l.kind !== "draft").map((l) => {
+      const { web, desktop, mobile } = serializeLink(l, {
+        provider: task.sourceProvider, threadId: task.sourceThreadId,
+        account: task.sourceAccount, outlookItemId: task.sourceExternalId,
+      });
+      return {
+        kind: l.kind, label: l.label, provider: l.provider,
+        externalId: l.externalId, threadId: l.threadId, account: l.account,
+        web, desktop, mobile,
+      };
+    }),
     completedAt: task.completedAt?.toISOString() ?? null,
     updatedAt: task.updatedAt.toISOString(),
   };

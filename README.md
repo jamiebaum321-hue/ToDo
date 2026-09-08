@@ -190,9 +190,9 @@ Create a scheduled task in Claude or ChatGPT for 7:00 am and paste the prompt th
 1. call `get_run_context` **first** — which returns everything you have already handled;
 2. sweep every connector across the rolling window;
 3. sort what it finds into the four buckets, with a source link on every task;
-4. draft the easy replies into your drafts folder;
-5. send the whole list in one `sync_tasks` call with `replace: "window"`;
-6. read `skippedTasks` in the response and stop suggesting those.
+4. when enabled, save easy replies in their source conversations and read the saved drafts back;
+5. send the whole list with `replace: "window"` after a complete sweep, or `replace: "none"` if a connector could not be checked;
+6. respect `skippedTasks` and repair `linkGaps` before reporting the list ready.
 
 ## The MCP surface
 
@@ -204,7 +204,8 @@ Create a scheduled task in Claude or ChatGPT for 7:00 am and paste the prompt th
 | `list_tasks` / `get_task` | Read the list, by filter or by id/sourceKey. |
 | `create_task` / `update_task` | Add or change one task without touching the rest. |
 | `complete_task` / `snooze_task` / `reopen_task` / `delete_task` | Act on a task on your behalf. |
-| `attach_draft` | Attach a reply saved in your drafts, adding the "See your draft" button. |
+| `attach_draft` | Attach the verified identity of a saved reply or delegation draft. Does not create mail. |
+| `detach_draft` | Remove a draft reference after confirming the draft was sent or deleted; retain the task. |
 | `send_notification` | Push to every device you are signed in on. Respects quiet hours. |
 | `get_stats` | Counts per bucket, overdue, and recent runs. |
 
@@ -228,31 +229,38 @@ The buttons come from the `source` block. Send whatever the connector gave you a
     "provider": "outlook",
     "type": "email",
     "externalId": "AAMkAGI2TG93AAA=",
+    "account": "owner@example.com",
     "from": "Bob Whitaker <bob@acme.com>",
     "subject": "Re: Q3 partnership — ready for the full deck",
     "snippet": "Send the full proposal over and I'll walk the board through it Friday.",
-    "url": "https://outlook.office.com/mail/deeplink/read/AAMkAGI2TG93AAA%3D"
+    "url": "https://outlook.office.com/owa/?ItemID=AAMkAGI2TG93AAA%3D&exvsurl=1&viewmodel=ReadMessageItem"
   },
   "draft": {
     "provider": "outlook",
     "kind": "reply",
-    "body": "Hi Bob, the full proposal is attached…",
-    "externalId": "AAMkAGI2TG93AAA=-draft"
+    "body": "Hi Bob, I am preparing the full proposal and will confirm when it is ready.",
+    "externalId": "AAMkSavedDraftAAA=",
+    "account": "owner@example.com",
+    "replyToId": "AAMkAGI2TG93AAA=",
+    "verifiedAt": "2026-09-08T14:00:00Z",
+    "web": "https://outlook.office.com/owa/?ItemID=AAMkSavedDraftAAA%3D&exvsurl=1"
   }
 }
 ```
 
-A URL the connector supplied always wins over a derived one. Where none is given, ToDo builds what it can:
+A provider URL is preserved where possible. Gmail's exact conversation is rebuilt from the actual thread ID and mailbox address; an inbox URL cannot override those identities. Saved drafts require the read-back fields shown above. These example IDs and timestamps are illustrative; obtain real values from the mail connector.
 
 | Provider | Browser | Desktop | Phone |
 | --- | --- | --- | --- |
-| Outlook | `outlook.office.com/mail/deeplink/read/…` | `ms-outlook://` | `ms-outlook://emails/message?restId=…` |
-| Gmail | `mail.google.com/…#search/rfc822msgid:…` | — | same https link (app links handle it) |
+| Outlook | Provider's Graph `webLink` | Browser | Source message in Outlook, with browser alternative |
+| Gmail | `mail.google.com/mail/?authuser=…#all/<threadId>` | Browser | Gmail conversation scheme, with browser alternative |
 | Teams | the permalink | `msteams:/l/message/…` | `msteams:/l/message/…` |
 | Zoom | `zoom.us/j/…` | `zoommtg://…` | `zoommtg://…` |
 | Slack | `…slack.com/archives/…` | `slack://channel?…` | `slack://channel?…` |
 
-Gmail's most durable link is built from the RFC-822 `Message-ID` — it survives label moves and works across accounts — so send `messageId` when you have it.
+Gmail needs `source.threadId` and `source.account` for the exact conversation. Send the RFC-822 `messageId` too as a search fallback; a search result is not an exact thread action. A Gmail draft ID is not a browser compose token.
+
+Delegation reuses a saved draft addressed to the selected teammate, or opens a provider-specific composer with recipient, subject, and context. The task stays open until the user confirms the email was sent. Outlook invite email, calendar event, and Teams join links remain separate. Native mail handoffs require device verification; the calendar event uses its web link. See [provider actions, draft receipts, and device limits](docs/PROVIDER-ACTIONS.md).
 
 ## Deploying
 
@@ -336,7 +344,7 @@ src/
 ios/  android/                 Capacitor shells — see docs/APP-STORES.md
 prisma/schema.prisma       PostgreSQL; no enums or Json columns, so it reads as plain SQL
 prisma/migrations/         checked-in SQL, applied by `prisma migrate deploy`
-tests/                     162 tests: auth, tenant isolation, sync, MCP, deep links
+tests/                     auth, tenant isolation, sync, MCP, provider actions, deep links
 ```
 
 ### Commands
@@ -344,7 +352,8 @@ tests/                     162 tests: auth, tenant isolation, sync, MCP, deep li
 ```bash
 npm run dev            # development server
 npm run setup          # migrate + seed
-npm test               # 162 tests, against a real Postgres
+npm test               # full suite, against an isolated Postgres
+npm run test:unit      # pure tests, no Docker or Postgres required
 npm run typecheck      # tsc --noEmit
 npm run build          # migrate + production build
 npm run build:no-migrate  # build only, for CI and Docker images

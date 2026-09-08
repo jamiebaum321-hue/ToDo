@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { delegateMailto } from "@/lib/client/delegate";
+import { delegateMailto, delegationTarget } from "@/lib/client/delegate";
 import type { TaskDTO } from "@/lib/tasks";
 import type { TeamMemberDTO } from "@/lib/team";
 
@@ -50,5 +50,40 @@ describe("the hand-off email", () => {
 
   it("returns nothing for a teammate without an email — the chip just assigns", () => {
     expect(delegateMailto(task, { ...julie, email: null })).toBeNull();
+  });
+});
+
+describe("provider delegation actions", () => {
+  const gmail = { ...task, source: { ...task.source, provider: "gmail", account: "owner@example.com" } } as TaskDTO;
+  it("opens Gmail with the selected recipient, subject and body on desktop and app compose on mobile", () => {
+    const action = delegationTarget(gmail, julie)!;
+    const url = new URL(action.target.web!);
+    expect(url.hostname).toBe("mail.google.com");
+    expect(url.searchParams.get("authuser")).toBe("owner@example.com");
+    expect(url.searchParams.get("to")).toBe(julie.email);
+    expect(url.searchParams.get("su")).toBe("Fwd: Venue hold — Cedar Hall");
+    expect(url.searchParams.get("body")).toContain("Deposit due by Friday.");
+    expect(action.target.mobile).toContain("googlegmail:///co?");
+    expect(action.saved).toBe(false);
+  });
+  it("opens Outlook compose with the same recipient, subject and content", () => {
+    const outlook = { ...gmail, links: [], source: { ...gmail.source, provider: "outlook" } };
+    const action = delegationTarget(outlook, julie)!;
+    const url = new URL(action.target.web!);
+    expect(url.hostname).toBe("outlook.office.com");
+    expect(url.searchParams.get("to")).toBe(julie.email);
+    expect(url.searchParams.get("subject")).toContain("Cedar Hall");
+    expect(action.target.mobile).toContain("ms-outlook://compose?");
+  });
+  it("reuses a saved draft only for its own recipient", () => {
+    const ready = { ...gmail, draft: { ready: true, kind: "forward", to: julie.email, web: "https://mail.google.com/mail/#all/forward-thread", providerLabel: "Gmail" } } as TaskDTO;
+    expect(delegationTarget(ready, julie)).toMatchObject({ saved: true, target: { web: ready.draft!.web } });
+    expect(delegationTarget(ready, { ...julie, email: "topaz@example.com" })?.saved).toBe(false);
+    expect(new URL(delegationTarget(ready, { ...julie, email: "topaz@example.com" })!.target.web!).searchParams.get("to")).toBe("topaz@example.com");
+  });
+  it("does not use a reply draft as a handoff and does not mutate task state", () => {
+    const original = { ...gmail, status: "open", draft: { ready: true, kind: "reply", to: julie.email } } as TaskDTO;
+    expect(delegationTarget(original, julie)?.saved).toBe(false);
+    expect(original.status).toBe("open");
   });
 });

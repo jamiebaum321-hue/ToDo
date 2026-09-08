@@ -1,3 +1,4 @@
+import { ACTION_GUIDANCE } from "./action-guidance";
 import { prisma } from "../db";
 import { BUCKETS, normalizeBucket } from "../buckets";
 import { getSettings } from "../settings";
@@ -5,11 +6,11 @@ import { describeTeamForAgent, listTeam } from "../team";
 import { activeSuppressions, clearSuppression, SUPPRESSION_REASON } from "../suppression";
 import { serializeTaskForAgent, stringifyTags, taskInclude } from "../tasks";
 import { syncTasks } from "../sync";
+import { prepareDraft } from "../drafts";
 import { completeTask, deleteTask as deleteTaskAction, snoozeTask } from "../actions";
-import { deriveLinkTarget, defaultLabel, hasAnyUrl } from "../deeplinks";
-import { normalizeProvider } from "../providers";
+import { defaultLabel } from "../deeplinks";
 import { sendPushToUser } from "../push";
-import { formatZodError, syncInput, taskInput, updateTaskInput } from "../validation";
+import { draftInput, formatZodError, syncInput, taskInput, updateTaskInput } from "../validation";
 import { dataResult, errorResult, type JsonRpcRequest } from "./protocol";
 import type { Actor } from "../auth";
 
@@ -89,11 +90,15 @@ const LINKS_SCHEMA = {
 
 const DRAFT_SCHEMA = {
   type: "object",
-  description:
-    "A reply you already wrote and saved to the user's drafts. Adds a 'See your draft' button next to the open button, so the task is one tap from sent. The draft MUST be a true REPLY draft created on the source thread — Gmail: drafts.create with message.threadId set to the source thread (plus In-Reply-To/References of the message you are answering); Outlook: POST /me/messages/{sourceId}/createReply, then PATCH the body. Never a standalone new message: the app's draft buttons open the CONVERSATION with the draft sitting inside it (field-tested as the only handoff that works on phones), and a standalone draft appears nowhere.",
+  description: "A provider-saved draft, verified by reading it back before attaching. Reply/reply_all must belong to the source conversation. For delegation use forward/new with the selected teammate in to and the draft's OWN threadId/account. externalId and verifiedAt are required to show a saved-draft button. Body-only content is a suggestion, not a saved draft. Reuse existing draft ids from get_run_context instead of creating duplicates.",
   properties: {
     provider: str("outlook | gmail | ..."),
     kind: str("reply | reply_all | forward | new", { enum: ["reply", "reply_all", "forward", "new"] }),
+    verifiedAt: str("ISO timestamp of the successful provider read-back. Verify draft state, mailbox, recipients, body, and thread before setting this. Omit for suggested text that has not been saved."),
+    threadId: str("For Gmail: message.threadId returned by the saved draft. A reply must match source.threadId; a new/forward draft uses its own thread."),
+    account: str("Mailbox address containing the saved draft."),
+    replyToId: str("For an Outlook reply: source message id used with createReply/createReplyAll."),
+    to: str("Recipient email address. Required for forward/new drafts, and used to match the selected delegate."),
     subject: str("Draft subject."),
     body: str("Draft body, for preview inside the app."),
     externalId: str("The reply draft's provider id (Gmail draft id / the Graph id createReply returned)."),
@@ -190,6 +195,7 @@ export const TOOLS: ToolDefinition[] = [
           // instructions when the connection is made, but clients read those
           // once — a setting changed since then only reaches the agent through
           // this call, so this is the copy to trust.
+          actionGuidance: ACTION_GUIDANCE,
           houseRules: {
             rollingWindowDays: windowDays,
             writeDrafts: settings.requestDrafts,
@@ -229,8 +235,8 @@ export const TOOLS: ToolDefinition[] = [
               }
             : null,
           guidance:
-            "Build the full list for the window, then send it in ONE sync_tasks call with replace='window'. Anything you leave out is cleared. Anything in alreadyHandled will be refused and reported back to you — do not re-raise those just because the original email is still sitting in the mailbox; only something genuinely new on the same item (a fresh reply, a moved deadline) justifies a new task, and a message you have already seen is not new evidence. Follow `houseRules` even where this run's prompt says nothing about them. " +
-            "Link rules, field-tested: Gmail needs source.threadId (the only id that opens the conversation in browser AND app) plus source.account; Outlook needs the Graph webLink untouched in source.url, with DEFAULT Graph ids (immutable ids break links). A draft must be a REPLY draft created on the source thread (Gmail drafts.create with threadId; Outlook createReply), never a standalone message. For a meeting invite you want accepted, send the INVITE EMAIL as source (Accept/Decline live there — a calendar deep link opens a phone's mail app on the wrong screen) and add the event as a links[] entry kind 'calendar' with its own webLink/htmlLink. Never hand-write ms-outlook:// or googlegmail:// URLs: the app builds those itself and keeps only device-verified shapes.",
+            "Build the full list for the window, then send it in ONE sync_tasks call with replace='window' only after a complete sweep. If a connector cannot be checked, use replace='none' to preserve existing tasks. Anything in alreadyHandled will be refused and reported back to you — do not re-raise those just because the original email is still sitting in the mailbox; only something genuinely new on the same item (a fresh reply, a moved deadline) justifies a new task, and a message you have already seen is not new evidence. Follow `houseRules` even where this run's prompt says nothing about them. " +
+            "Link rules, field-tested: Gmail needs source.threadId (the only id that opens the conversation in browser AND app) plus source.account; Outlook needs the Graph webLink untouched in source.url, with DEFAULT Graph ids (immutable ids break links). Reply drafts must be saved on the source thread; delegation drafts use their own recipient and conversation. Follow actionGuidance and verify saved drafts before attaching. For a meeting invite you want accepted, send the INVITE EMAIL as source (Accept/Decline live there — a calendar deep link opens a phone's mail app on the wrong screen) and add the event as a links[] entry kind 'calendar' with its own webLink/htmlLink. Never hand-write ms-outlook:// or googlegmail:// URLs: the app builds those itself and keeps only device-verified shapes.",
         },
       );
     },
@@ -595,65 +601,54 @@ export const TOOLS: ToolDefinition[] = [
 
   {
     name: "attach_draft",
-    title: "Attach a draft reply",
+    title: "Attach a saved draft",
     description:
-      "Attach a reply you have written and saved into the user's drafts. The task then shows a 'See your draft' button that opens that exact draft in Outlook or Gmail — the user reads it, hits send, and the task is done.",
+      "Attach a reply or delegation draft already saved and read back from Gmail or Outlook. This stores a reference, not mail. Reuse the existing provider draft id and preserve user edits. Opening a draft does not complete the task.",
     inputSchema: {
       type: "object",
-      required: ["id"],
-      properties: {
-        id: str("Task id or sourceKey."),
-        provider: str("outlook | gmail | ..."),
-        kind: str("reply | reply_all | forward | new", { enum: ["reply", "reply_all", "forward", "new"] }),
-        subject: str("Draft subject."),
-        body: str("Draft body, previewed in the app."),
-        externalId: str("The draft's provider id, so the button opens that exact draft."),
-        url: str("Direct URL to the draft, if the connector gave you one."),
-        desktop: str("Desktop app URL."),
-        mobile: str("Mobile app URL."),
-      },
+      required: ["id", "externalId", "verifiedAt"],
+      properties: { id: str("Task id or sourceKey."), ...DRAFT_SCHEMA.properties },
     },
     handler: async (args, actor) => {
+      if (typeof args?.id !== "string" || !args.id.trim()) return toolError("Provide the task id or sourceKey to attach this draft to.");
       const task = await prisma.task.findFirst({
         where: { userId: actor.user.id, OR: [{ id: args?.id }, { sourceKey: args?.id }] },
+        include: { links: true },
       });
       if (!task) return toolError("No task matches that id or sourceKey.");
 
-      // Existence first: the thread/folder fallbacks below can give any mail
-      // draft a URL, which must not turn a phantom draft into a button.
-      if (!args?.body && !args?.externalId && !args?.url && !args?.web && !args?.desktop && !args?.mobile) {
-        return toolError("Give me at least a URL, an externalId, or the draft body — otherwise the button has nowhere to go.");
-      }
-
-      const provider = normalizeProvider(args?.provider ?? task.sourceProvider);
-      const target = deriveLinkTarget({
-        provider,
-        externalId: args?.externalId,
-        // A reply draft rides the source conversation, so its links aim there.
-        threadId: task.sourceThreadId,
-        anchorItemId: task.sourceExternalId,
-        account: task.sourceAccount,
-        kind: "draft",
-        web: args?.url ?? args?.web,
-        desktop: args?.desktop,
-        mobile: args?.mobile,
+      const parsed = draftInput.safeParse(args);
+      if (!parsed.success) return toolError(formatZodError(parsed.error));
+      const prepared = prepareDraft({
+        title: task.title, bucket: task.bucket, draft: parsed.data,
+        source: {
+          provider: task.sourceProvider ?? undefined, externalId: task.sourceExternalId ?? undefined,
+          threadId: task.sourceThreadId ?? undefined, account: task.sourceAccount ?? undefined,
+          url: task.links.find(l => l.kind === "source")?.webUrl ?? undefined,
+        },
       });
-      if (!hasAnyUrl(target) && !args?.body) {
-        return toolError("Give me at least a URL, an externalId, or the draft body — otherwise the button has nowhere to go.");
-      }
-
-      const data = {
-        provider,
-        kind: args?.kind ?? "reply",
-        subject: args?.subject ?? null,
-        body: args?.body ?? null,
-        externalId: args?.externalId ?? null,
-        webUrl: target.web ?? null,
-        desktopUrl: target.desktop ?? null,
-        mobileUrl: target.mobile ?? null,
-      };
+      if (!prepared.row) return toolError("Provide a saved draft identity or suggested body text.");
+      if (prepared.issue) return toolError(prepared.issue);
+      const data = prepared.row;
       await prisma.draft.upsert({ where: { taskId: task.id }, create: { taskId: task.id, ...data }, update: data });
-      return dataResult(`Draft attached to "${task.title}".`, { taskId: task.id, label: defaultLabel(provider, "draft") });
+      return dataResult(`Draft attached to "${task.title}".`, { taskId: task.id, label: defaultLabel(data.provider, "draft") });
+    },
+  },
+
+  {
+    name: "detach_draft",
+    title: "Remove a stale draft reference",
+    description: "After checking the mailbox and confirming a saved draft was sent or deleted, remove its reference from ToDo. Does not delete mail or change the task's status. Re-read the provider first; a temporary connector error is not proof the draft is gone.",
+    inputSchema: {
+      type: "object", required: ["id", "reason"],
+      properties: { id: str("Task id or sourceKey."), reason: { type: "string", enum: ["sent", "deleted"] } },
+    },
+    handler: async (args, actor) => {
+      if (typeof args?.id !== "string" || !args.id.trim() || !["sent", "deleted"].includes(args?.reason)) return toolError("Provide a task id and reason 'sent' or 'deleted', confirmed from the mailbox.");
+      const task = await prisma.task.findFirst({ where: { userId: actor.user.id, OR: [{ id: args.id }, { sourceKey: args.id }] } });
+      if (!task) return toolError("No task matches that id or sourceKey.");
+      await prisma.draft.deleteMany({ where: { taskId: task.id } });
+      return dataResult("Stale draft reference removed. The task remains unchanged.", { taskId: task.id });
     },
   },
 

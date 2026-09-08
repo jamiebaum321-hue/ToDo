@@ -53,7 +53,7 @@ describe("deriveLinkTarget", () => {
   it("rewrites the retired deeplink shape back to the working owa form", () => {
     const retired = "https://outlook.office.com/mail/deeplink/read/AAMkAGI2TG93AAA%3D";
     const t = deriveLinkTarget({ provider: "outlook", web: retired });
-    expect(t.web).toBe("https://outlook.office365.com/owa/?ItemID=AAMkAGI2TG93AAA%3D&exvsurl=1&viewmodel=ReadMessageItem");
+    expect(t.web).toBe("https://outlook.office.com/owa/?ItemID=AAMkAGI2TG93AAA%3D&exvsurl=1&viewmodel=ReadMessageItem");
   });
 
   it("never stores a custom scheme where a browser or a desktop will click it", () => {
@@ -76,16 +76,16 @@ describe("deriveLinkTarget", () => {
     expect(t.web).toBe("https://mail.google.com/mail/#search/rfc822msgid:abc%40mail.gmail.com");
   });
 
-  it("falls back to a Gmail thread id when there is no message id", () => {
+  it("does not confuse a bare Gmail message id with a thread id", () => {
     const t = deriveLinkTarget({ provider: "gmail", externalId: "18c9f0" });
-    expect(t.web).toBe("https://mail.google.com/mail/#all/18c9f0");
+    expect(t.web).toBeNull();
   });
 
   it("names the Gmail account instead of guessing at /u/0/", () => {
     // /u/{n}/ follows browser sign-in order, so on a second account u/0 opens
     // the wrong mailbox and Gmail shows that inbox rather than the thread.
     const t = deriveLinkTarget({ provider: "gmail", threadId: "18c9f0", account: "jamie@work.com" });
-    expect(t.web).toBe("https://mail.google.com/mail/u/?authuser=jamie%40work.com#all/18c9f0");
+    expect(t.web).toBe("https://mail.google.com/mail/?authuser=jamie%40work.com#all/18c9f0");
   });
 
   it("prefers the thread id over the message id — only the thread resolves", () => {
@@ -103,11 +103,11 @@ describe("deriveLinkTarget", () => {
       threadId: "18c9f0",
       account: "jamie@work.com",
     });
-    expect(t.web).toBe("https://mail.google.com/mail/u/?authuser=jamie%40work.com#all/18c9f0");
+    expect(t.web).toBe("https://mail.google.com/mail/?authuser=jamie%40work.com#all/18c9f0");
 
     const noThread = deriveLinkTarget({ provider: "gmail", messageId: "<abc@mail.gmail.com>", account: "jamie@work.com" });
     expect(noThread.web).toBe(
-      "https://mail.google.com/mail/u/?authuser=jamie%40work.com#search/rfc822msgid:abc%40mail.gmail.com",
+      "https://mail.google.com/mail/?authuser=jamie%40work.com#search/rfc822msgid:abc%40mail.gmail.com",
     );
   });
 

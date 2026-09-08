@@ -163,7 +163,7 @@ export interface GmailUrlInput {
  */
 export function gmailBase(account?: string | null): string {
   return account && account.includes("@")
-    ? `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(account)}`
+    ? `https://mail.google.com/mail/?authuser=${encodeURIComponent(account.trim())}`
     : // No identity known: the bare path lets Gmail pick the default account,
       // which is what /u/0/ meant — minus the pretence of knowing the index.
       "https://mail.google.com/mail/";
@@ -195,14 +195,13 @@ export function buildGmailWebUrl(input: GmailUrlInput): string | null {
   const base = gmailBase(input.account);
   const mid = input.messageId?.trim();
   const thread = input.threadId?.trim();
-  const id = input.externalId?.trim();
 
   if ((input.kind ?? "").toLowerCase() === "draft") {
     // A reply draft lives inside its thread, so the thread IS the draft link.
     // The old `#drafts?compose=<id>` form field-tested as opening an empty
     // compose window — Gmail wants its own compose token there, not an API
-    // draft id — and the drafts folder is the honest fallback without one.
-    return thread ? `${base}#all/${encodeURIComponent(thread)}` : `${base}#drafts`;
+    // draft id. Without a thread id there is no exact draft destination.
+    return thread ? `${base}#all/${encodeURIComponent(thread)}` : null;
   }
   // The thread id first: #all/<threadId> lands ON the conversation. The
   // rfc822msgid search is more durable, but it field-tested as landing on a
@@ -214,8 +213,8 @@ export function buildGmailWebUrl(input: GmailUrlInput): string | null {
   if (mid) {
     return `${base}#search/rfc822msgid:${encodeURIComponent(mid.replace(/[<>]/g, ""))}`;
   }
-  // A bare message id in #all/ shows All Mail, but it is the last id left.
-  return id ? `${base}#all/${encodeURIComponent(id)}` : null;
+  // A Gmail message id is NOT a thread id. A generic inbox is not a destination.
+  return null;
 }
 
 /**
@@ -230,7 +229,11 @@ export function normalizeMailLink<T extends string | null | undefined>(url: T): 
   const read = url.match(OUTLOOK_READ_DEEPLINK);
   if (read) {
     // decodeURIComponent because the deeplink builder stored the id encoded.
-    return outlookWebLink(decodeURIComponent(read[2])) as T;
+    try {
+      return outlookWebLink(decodeURIComponent(read[2]), "message", read[1]) as T;
+    } catch {
+      return url;
+    }
   }
 
   if (GMAIL_INDEXED.test(url)) {

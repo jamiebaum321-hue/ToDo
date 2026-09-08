@@ -1,3 +1,4 @@
+import { ACTION_GUIDANCE } from "./action-guidance";
 import { prisma } from "../db";
 import { BUCKETS } from "../buckets";
 import { getSettings } from "../settings";
@@ -42,7 +43,7 @@ export async function buildInstructions(actor: Actor): Promise<string> {
   const rules = [
     `Cover a rolling ${settings.rollingWindowDays}-day window, backwards and forwards, on every run.`,
     settings.requestDrafts
-      ? "Where a reply is obvious, WRITE IT as a REPLY DRAFT on the source thread (Gmail: drafts.create with the thread's threadId; Outlook: createReply on the message, then patch the body), then pass it in `draft` — never a standalone draft, and do this whether or not the prompt asked for drafts, they have turned it on here."
+      ? "Where a reply is obvious, save it as a reply draft on the source conversation, read it back, then pass its verified identity in `draft`. For delegation use a forward/new draft addressed to the teammate. Draft preparation is enabled even if this run's prompt does not mention it."
       : "Do not write draft replies. The user has turned that off.",
     settings.showReasons
       ? "Give every task a one-line `reason` for the bucket you chose. The user reads them."
@@ -52,7 +53,7 @@ export async function buildInstructions(actor: Actor): Promise<string> {
   return [
     "ToDo is the user's task inbox. You fill it; they clear it.",
     "",
-    "On a scheduled run, always start with `get_run_context`, then send the whole list in one `sync_tasks` call with replace=\"window\".",
+    "On a scheduled run, start with `get_run_context`. Send the complete list with replace=\"window\" only after a complete connector sweep; if a connector cannot be checked, use replace=\"none\" to preserve existing tasks.",
     "",
     "The single rule that matters: anything in `alreadyHandled` has been cleared by the user in the app and must never be raised again. You are looking at a rolling window, so yesterday's unanswered email is still sitting in the mailbox — but if the user marked it done, it is done, whatever the mailbox says. Raise it again only if something genuinely new has happened on it since: a fresh reply, a moved deadline. A message you already saw is not new evidence.",
     "",
@@ -70,7 +71,7 @@ export async function buildInstructions(actor: Actor): Promise<string> {
     "",
     "- **Gmail** — `source.threadId` is REQUIRED (every `messages.get` returns one): it is the only id that lands ON the conversation, in the browser and in the Gmail app alike. Also send `source.messageId` (the RFC-822 `Message-ID` header) as the durable fallback, and always `source.account`.",
     "- **Outlook / Graph** — the message's `webLink` in `source.url`, UNTOUCHED — it is the one browser link that opens the thread. The Graph id in `source.externalId`, the mailbox in `source.account`, and default Graph ids only (never `Prefer: IdType=\"ImmutableId\"`; links built from immutable ids do not resolve).",
-    "- **Drafts** — a draft must be a REPLY draft created on the source thread (Gmail: `drafts.create` with `message.threadId`; Outlook: `createReply`, then patch the body). The draft buttons open the conversation with the draft sitting in it; a standalone draft shows up nowhere.",
+    ACTION_GUIDANCE,
     "- **Meeting invites you want accepted** — Accept/Decline live on the INVITE EMAIL, not the calendar entry: a phone tapping a calendar deep link just opens the mail app on the wrong screen (field-tested). So send the invite EMAIL as `source` (provider `outlook` or `gmail`, with its own id and webLink) and add the event as a `links` entry with kind `calendar` carrying the event's own link (`webLink` on a Graph event, `htmlLink` from Google Calendar). The user then gets the RSVP buttons on the main button, and the calendar as the second.",
     "- **Teams, Slack, Zoom** — the permalink in `source.url`; the app derives the app links from it.",
     "- **Do not invent app links.** Send https URLs and ids; the app builds the `ms-outlook://` and `googlegmail:///` handoffs itself, and it only keeps shapes a real device confirmed. Anything else it drops in favour of the browser link, so a hand-written scheme is at best ignored and at worst the thing that opened the app on the wrong screen.",
@@ -79,11 +80,11 @@ export async function buildInstructions(actor: Actor): Promise<string> {
 
 const FALLBACK_INSTRUCTIONS = `ToDo is the user's task inbox. You fill it; they clear it.
 
-On a scheduled run, always start with \`get_run_context\`, then send the whole list in one \`sync_tasks\` call with replace="window".
+On a scheduled run, start with \`get_run_context\`. Use replace="window" only after a complete connector sweep; use replace="none" when a connector cannot be checked.
 
 The single rule that matters: anything in \`alreadyHandled\` has been cleared by the user in the app and must never be raised again. You are looking at a rolling window, so yesterday's unanswered email is still sitting in the mailbox — but if the user marked it done, it is done, whatever the mailbox says.
 
-Every task should carry a \`source\` with the provider's own ids and URL, so the app can put a button on the card that opens the exact email, message or meeting. Where you can write the reply, write it as a REPLY DRAFT on the source thread (Gmail: \`drafts.create\` with \`message.threadId\`; Outlook: \`createReply\`, then patch the body) and pass it in \`draft\` — that turns the task into two taps, and a standalone draft shows up nowhere.
+Every task should carry a \`source\` with the provider's own ids and URL, so the app can open the exact email, message or meeting. When draft preparation is enabled, save replies on their source conversation and delegation drafts as forward/new messages to the teammate. Read each draft back and pass its verified identity in \`draft\`.
 
 That button is the whole point of the app, and a link that lands on a generic inbox is worse than no link at all, so spend the extra call to get the ids right (these rules are field-tested):
 
@@ -92,7 +93,9 @@ That button is the whole point of the app, and a link that lands on a generic in
 - **Meeting invites you want accepted** — Accept/Decline live on the INVITE EMAIL, not the calendar entry, so send that email as \`source\` and add the event as a \`links\` entry with kind \`calendar\` (\`webLink\` on a Graph event, \`htmlLink\` from Google Calendar).
 - **Teams, Slack, Zoom** — send the permalink in \`source.url\`; the app derives the desktop and mobile app links from it.
 
-If a connector hands you a canonical URL, pass it in \`source.url\` — a real permalink always beats one the app has to reconstruct.`;
+If a connector hands you a canonical URL, pass it in \`source.url\` — a real permalink always beats one the app has to reconstruct.
+
+${ACTION_GUIDANCE}`;
 
 const RESOURCES = [
   {

@@ -76,7 +76,7 @@ describe("syncTasks", () => {
   });
 
   it("attaches a draft when the agent wrote one", async () => {
-    await sync([{ ...bobEmail, draft: { provider: "outlook", kind: "reply", body: "Hi Bob…", externalId: "d1" } }]);
+    await sync([{ ...bobEmail, source: { ...bobEmail.source, account: "owner@example.com" }, draft: { provider: "outlook", kind: "reply", body: "Hi Bob…", externalId: "d1", verifiedAt: new Date(), replyToId: "AAMk-bob-1", account: "owner@example.com" } }]);
     const draft = await prisma.draft.findFirst({ where: { task: { userId } } });
     expect(draft?.body).toBe("Hi Bob…");
     // The owa container, the one shape field-tested as actually opening an
@@ -367,7 +367,7 @@ describe("rows stored before mail-links.ts existed", () => {
     expect(duped?.mobile).toBe("ms-outlook://emails/message?restId=AAMk-dupe%3D");
 
     const real = dto.links.find((l) => l.label === "Real mobile");
-    expect(real?.web).toBe("https://outlook.office365.com/owa/?ItemID=AAMkReal&exvsurl=1&viewmodel=ReadMessageItem");
+    expect(real?.web).toBe("https://outlook.office.com/owa/?ItemID=AAMkReal&exvsurl=1&viewmodel=ReadMessageItem");
     expect(real?.mobile).toBe("ms-outlook://emails/message?restId=AAMkReal");
   });
 
@@ -441,7 +441,7 @@ describe("the shapes found on a live account", () => {
         title: "Send the Cornell Pace chase",
         bucket: "urgent_important",
         source: { provider: "outlook", type: "email", externalId: "AAMk-src-9", account: "jamie@netsysgroup.com" },
-        draft: { provider: "outlook", kind: "reply", externalId: "AAMk-draft-4", body: "Give me a yes and I'll send it." },
+        draft: { provider: "outlook", kind: "reply", externalId: "AAMk-draft-4", verifiedAt: new Date(), replyToId: "AAMk-src-9", account: "jamie@netsysgroup.com", body: "Give me a yes and I'll send it." },
       },
     ]);
 
@@ -454,7 +454,7 @@ describe("the shapes found on a live account", () => {
     expect(dto.draft?.web).toContain("/owa/?ItemID=");
   });
 
-  it("sends a Gmail draft with no thread to the drafts list, not a blank composer", async () => {
+  it("keeps a Gmail draft without a thread as a suggestion requiring repair", async () => {
     await sync([
       {
         title: "Thank Frances for the towel idea",
@@ -467,11 +467,11 @@ describe("the shapes found on a live account", () => {
     const dto = serializeTask(
       await prisma.task.findFirstOrThrow({ where: { userId }, include: taskInclude }),
     );
-    expect(dto.draft?.web).toBe("https://mail.google.com/mail/u/?authuser=jamiebaum321%40gmail.com#drafts");
-    expect(dto.draft?.web).not.toContain("compose=");
+    expect(dto.draft?.web).toBeNull();
+    expect(dto.draft?.ready).toBe(false);
   });
 
-  it("heals a stored blank-composer draft link at read time", async () => {
+  it("hides a legacy blank-composer draft link until the provider draft is verified", async () => {
     await sync([{ ...newsletter, source: { ...newsletter.source, threadId: undefined, account: "j@w.com" } }]);
     const task = await prisma.task.findFirstOrThrow({ where: { userId } });
     await prisma.draft.create({
@@ -480,13 +480,14 @@ describe("the shapes found on a live account", () => {
         provider: "gmail",
         kind: "reply",
         body: "Written before the fix",
-        webUrl: "https://mail.google.com/mail/u/?authuser=j%40w.com#drafts?compose=draft-legacy",
+        webUrl: "https://mail.google.com/mail/?authuser=j%40w.com#drafts?compose=draft-legacy",
       },
     });
 
     const dto = serializeTask(
       await prisma.task.findUniqueOrThrow({ where: { id: task.id }, include: taskInclude }),
     );
-    expect(dto.draft?.web).toBe("https://mail.google.com/mail/u/?authuser=j%40w.com#drafts");
+    expect(dto.draft?.web).toBeNull();
+    expect(dto.draft?.ready).toBe(false);
   });
 });

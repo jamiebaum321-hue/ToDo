@@ -31,7 +31,7 @@ const RETIRED_DEEPLINK = "https://outlook.office.com/mail/deeplink/read/AAMkADRl
 
 describe("gmail: resolve the mailbox by identity, never by index", () => {
   it("builds ?authuser= from the address", () => {
-    expect(gmailBase("jamie@work.com")).toBe("https://mail.google.com/mail/u/?authuser=jamie%40work.com");
+    expect(gmailBase("jamie@work.com")).toBe("https://mail.google.com/mail/?authuser=jamie%40work.com");
   });
 
   it("goes bare when no address is known — never /u/<n>/", () => {
@@ -39,13 +39,13 @@ describe("gmail: resolve the mailbox by identity, never by index", () => {
     expect(gmailBase("not-an-address")).toBe("https://mail.google.com/mail/");
   });
 
-  it("prefers the thread id, then the RFC-822 search, then whatever is left", () => {
+  it("prefers the thread id, then RFC-822 search, and refuses a bare message id", () => {
     // Field-ordered: #all/<threadId> lands ON the conversation; the search is
     // durable but lands on a results page the user still has to click.
     const all = { messageId: "<a@b.c>", threadId: "t1", externalId: "m1", account: "j@w.com" };
     expect(buildGmailWebUrl(all)).toContain("#all/t1");
     expect(buildGmailWebUrl({ ...all, threadId: null })).toContain("#search/rfc822msgid:a%40b.c");
-    expect(buildGmailWebUrl({ ...all, messageId: null, threadId: null })).toContain("#all/m1");
+    expect(buildGmailWebUrl({ ...all, messageId: null, threadId: null })).toBeNull();
     expect(buildGmailWebUrl({})).toBeNull();
   });
 
@@ -61,7 +61,7 @@ describe("gmail: resolve the mailbox by identity, never by index", () => {
   });
 
   it("derives the app scheme from a stored thread link, and only from one", () => {
-    expect(gmailSchemeFromWeb("https://mail.google.com/mail/u/?authuser=j%40w.com#all/18c9f0")).toBe(
+    expect(gmailSchemeFromWeb("https://mail.google.com/mail/?authuser=j%40w.com#all/18c9f0")).toBe(
       "googlegmail:///cv=18c9f0",
     );
     expect(gmailSchemeFromWeb("https://mail.google.com/mail/#all/18c9f0")).toBe("googlegmail:///cv=18c9f0");
@@ -71,7 +71,7 @@ describe("gmail: resolve the mailbox by identity, never by index", () => {
   });
 
   it("leaves the authuser form alone — that one is correct", () => {
-    const good = "https://mail.google.com/mail/u/?authuser=j%40w.com#all/t1";
+    const good = "https://mail.google.com/mail/?authuser=j%40w.com#all/t1";
     expect(normalizeMailLink(good)).toBe(good);
   });
 });
@@ -85,7 +85,7 @@ describe("outlook: the webLink is the browser link that works", () => {
 
   it("rewrites the retired deeplink shape back into the working owa form", () => {
     expect(normalizeMailLink(RETIRED_DEEPLINK)).toBe(
-      "https://outlook.office365.com/owa/?ItemID=AAMkADRlY2ZjZGQx%2BrywUxVqo%2FAAA4T%2FVnAAA%3D&exvsurl=1&viewmodel=ReadMessageItem",
+      "https://outlook.office.com/owa/?ItemID=AAMkADRlY2ZjZGQx%2BrywUxVqo%2FAAA4T%2FVnAAA%3D&exvsurl=1&viewmodel=ReadMessageItem",
     );
   });
 
@@ -214,13 +214,11 @@ describe("app schemes: only the ones a device confirmed", () => {
     expect(outlookDraftsFolder()).toBe("https://outlook.office.com/mail/drafts");
   });
 
-  it("sends a draft with no thread to the drafts list, never a blank composer", () => {
+  it("refuses a draft destination when no thread is known", () => {
     // `#drafts?compose=<draft id>` opened an empty compose window.
-    expect(buildGmailWebUrl({ kind: "draft", account: "j@w.com" })).toBe(
-      "https://mail.google.com/mail/u/?authuser=j%40w.com#drafts",
-    );
+    expect(buildGmailWebUrl({ kind: "draft", account: "j@w.com" })).toBeNull();
     expect(buildGmailWebUrl({ kind: "draft", threadId: "t7", account: "j@w.com" })).toBe(
-      "https://mail.google.com/mail/u/?authuser=j%40w.com#all/t7",
+      "https://mail.google.com/mail/?authuser=j%40w.com#all/t7",
     );
   });
 });

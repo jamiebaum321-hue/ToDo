@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { TEST_DB_URL } from "./db-path";
 
 /**
@@ -9,7 +10,8 @@ import { TEST_DB_URL } from "./db-path";
  */
 export default function setup() {
   try {
-    execFileSync("npx", ["prisma", "db", "push", "--skip-generate", "--accept-data-loss"], {
+    const require = createRequire(import.meta.url);
+    execFileSync(process.execPath, [require.resolve("prisma/build/index.js"), "db", "push", "--skip-generate", "--accept-data-loss"], {
       env: { ...process.env, DATABASE_URL: TEST_DB_URL, DIRECT_URL: TEST_DB_URL },
       stdio: "pipe",
     });
