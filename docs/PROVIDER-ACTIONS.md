@@ -8,17 +8,20 @@ A body or URL alone is a suggested response. A saved mail draft must include:
 
 | Field | Meaning |
 | --- | --- |
-| `externalId` | Actual provider draft ID, obtained after saving |
+| `verificationMethod` | `provider_api` (default), or the restricted Gmail `mailbox_ui` receipt described below |
+| `externalId` | Actual provider draft ID, obtained after saving; required for `provider_api`, omitted for `mailbox_ui` |
 | `verifiedAt` | Time the assistant read the saved draft back and checked it |
 | `account` | Address of the mailbox containing the draft |
 | `kind` | `reply`, `reply_all`, `forward`, or `new` |
 | `threadId` | Gmail: the saved draft message's thread ID; for replies it must match `source.threadId` |
 | `replyToId` | Outlook replies: source Graph message ID used in `createReply` / `createReplyAll` |
-| `to` | Required for forward/new drafts so the selected delegate can be matched |
+| `to` | Required for forward/new drafts and `mailbox_ui` receipts |
 | `web` | Outlook: the saved draft's own Graph `webLink`, when available |
 | `subject`, `body` | Preview of the response; preserve any user edits |
 
 `verifiedAt` is an attestation from the assistant, not an independent provider check performed by ToDo. The assistant must confirm the DRAFT label / `isDraft`, account, recipients, conversation, subject, and composed response. Quoted original mail alone is not a prepared reply. The app validates consistency of the supplied identities; it cannot detect an assistant inventing a receipt.
+
+When Gmail's authenticated browser UI is available but its API draft ID is not, a **reply/reply_all only** can use `verificationMethod: "mailbox_ui"`. Reopen the persisted draft from Drafts or its source conversation and check the mailbox, recipient, subject, composed body, and exact thread. Supply those as `account`, `to`, `subject`, `body`, `threadId`, plus the actual read-back time in `verifiedAt`. Both the source mailbox and source thread must match. Omit `externalId`; a legacy or guessed API ID is not proof. An open composer or suggested text without this reopened-mailbox check is insufficient. Outlook and forward/new delegation drafts still require provider API identity. On later runs, locate this existing Gmail draft by mailbox and thread before editing, preserve user edits, and never create a duplicate merely because its API ID is absent.
 
 For Gmail, save a reply with the real `message.threadId`, matching subject, and `In-Reply-To` / `References` headers. A connector's threaded-reply operation, such as `reply_message_id`, may set these on the assistant's behalf. Read back the result before attaching it. [Gmail threading requirements](https://developers.google.com/workspace/gmail/api/guides/threads).
 
@@ -85,7 +88,7 @@ Teams URLs preserve tenant and conversation context. [Teams deep links](https://
 
 ## Repair and lifecycle
 
-- `get_run_context` repeats the current settings, roster, action guidance, stored draft IDs, and `actionIssues` on every run. Reuse draft IDs and preserve user edits.
+- `get_run_context` repeats the current settings, roster, action guidance, draft identities and verification methods, and `actionIssues` on every run. It also retains estimates, confidence, rank, and source snippets so link repairs can preserve them. Reuse existing drafts and preserve user edits.
 - `sync_tasks` reports `linkGaps`. Repair with `replace: "none"` and re-read the task before calling it ready.
 - Omitted source metadata and extra links are preserved for the same source. Explicit `links: []` removes extra links. Changing source provider/account/item does not borrow the previous source's identity.
 - A new unverified suggestion does not overwrite an existing saved draft reference. After confirming a draft was sent or deleted, call `detach_draft` to remove the stale reference. This does not change task status or delete mail. A temporary connector error is not evidence of deletion.

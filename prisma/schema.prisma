@@ -301,6 +301,8 @@ model Draft {
   subject    String?
   body       String?
   externalId String?
+  /// provider_api uses a draft ID; mailbox_ui is an explicitly reopened Gmail reply.
+  verificationMethod String @default("provider_api")
   /// Set only after the assistant reads the saved draft back from the provider.
   verifiedAt DateTime?
   /// Drafts for forwards/new mail must carry their OWN conversation and mailbox.

@@ -90,18 +90,19 @@ const LINKS_SCHEMA = {
 
 const DRAFT_SCHEMA = {
   type: "object",
-  description: "A provider-saved draft, verified by reading it back before attaching. Reply/reply_all must belong to the source conversation. For delegation use forward/new with the selected teammate in to and the draft's OWN threadId/account. externalId and verifiedAt are required to show a saved-draft button. Body-only content is a suggestion, not a saved draft. Reuse existing draft ids from get_run_context instead of creating duplicates.",
+  description: "A provider-saved draft, verified by reading it back before attaching. Reply/reply_all must belong to the source conversation. provider_api verification requires externalId and verifiedAt. A Gmail reply reopened and checked in the authenticated mailbox UI may use mailbox_ui, omit the unknown API draft id, and explicitly supply account/threadId/to/subject/body/verifiedAt. For delegation use forward/new with the selected teammate in to and the draft's OWN threadId/account. Body-only content is a suggestion, not a saved draft. Find and reuse existing drafts instead of creating duplicates.",
   properties: {
     provider: str("outlook | gmail | ..."),
     kind: str("reply | reply_all | forward | new", { enum: ["reply", "reply_all", "forward", "new"] }),
+    verificationMethod: str("provider_api (default): read back the provider draft id. mailbox_ui: Gmail reply/reply_all only; reopen the persisted draft from Drafts or its source thread, verify mailbox/recipient/subject/composed body/conversation, and omit externalId. Never infer this from suggested text or an open blank composer.", { enum: ["provider_api", "mailbox_ui"] }),
     verifiedAt: str("ISO timestamp of the successful provider read-back. Verify draft state, mailbox, recipients, body, and thread before setting this. Omit for suggested text that has not been saved."),
-    threadId: str("For Gmail: message.threadId returned by the saved draft. A reply must match source.threadId; a new/forward draft uses its own thread."),
+    threadId: str("For Gmail: message.threadId returned by the saved draft, or the actual conversation id checked in the mailbox UI. A reply must match source.threadId; a new/forward draft uses its own thread."),
     account: str("Mailbox address containing the saved draft."),
     replyToId: str("For an Outlook reply: source message id used with createReply/createReplyAll."),
-    to: str("Recipient email address. Required for forward/new drafts, and used to match the selected delegate."),
+    to: str("Recipient email address. Required for forward/new drafts and mailbox_ui verification. Used to match the selected delegate."),
     subject: str("Draft subject."),
     body: str("Draft body, for preview inside the app."),
-    externalId: str("The reply draft's provider id (Gmail draft id / the Graph id createReply returned)."),
+    externalId: str("Actual provider draft id (Gmail draft id / the Graph id createReply returned). Required for provider_api; omit for mailbox_ui because the API id is unknown."),
     url: str("Direct URL to the draft if the provider hands you one; otherwise omit — the app links the thread, where a reply draft already shows."),
     desktop: str("Desktop app URL to the draft."),
     mobile: str("Mobile app URL to the draft."),
@@ -123,6 +124,7 @@ const TASK_SCHEMA = {
     ),
     dueAt: str("ISO 8601 deadline, if there is a real one."),
     estimateMinutes: int("Rough minutes to finish. Powers the 'quick hits' grouping."),
+    position: int("Existing task rank. Preserve during a link-only repair."),
     delegateTo: str("For the delegate bucket: who should get it."),
     tags: { type: "array", items: { type: "string" }, maxItems: 12, description: "Short labels, e.g. ['client', 'proposal']." },
     confidence: { type: "number", minimum: 0, maximum: 1, description: "How sure you are about this bucket. Below 0.5 the app flags it for review." },
@@ -603,10 +605,10 @@ export const TOOLS: ToolDefinition[] = [
     name: "attach_draft",
     title: "Attach a saved draft",
     description:
-      "Attach a reply or delegation draft already saved and read back from Gmail or Outlook. This stores a reference, not mail. Reuse the existing provider draft id and preserve user edits. Opening a draft does not complete the task.",
+      "Attach a reply or delegation draft already saved and read back from Gmail or Outlook. This stores a reference, not mail. provider_api requires the actual draft id; mailbox_ui is only for a Gmail reply reopened and checked in its source conversation. Find and reuse the existing draft and preserve user edits. Opening a draft does not complete the task.",
     inputSchema: {
       type: "object",
-      required: ["id", "externalId", "verifiedAt"],
+      required: ["id", "verifiedAt"],
       properties: { id: str("Task id or sourceKey."), ...DRAFT_SCHEMA.properties },
     },
     handler: async (args, actor) => {
