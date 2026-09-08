@@ -52,8 +52,9 @@ const clean = (u?: string | null) => (typeof u === "string" && u.trim().length >
 /** Teams and Zoom both publish an https link that the desktop app also claims. */
 function teamsDesktopFromWeb(web?: string) {
   if (!web) return undefined;
-  // https://teams.microsoft.com/l/message/... -> msteams:/l/message/...
-  const m = web.match(/^https?:\/\/teams\.microsoft\.com\/(l\/.*)$/i);
+  // Teams' Copy link action now also emits teams.cloud.microsoft. Keep the
+  // entire path and query intact so the app receives the exact message context.
+  const m = web.match(/^https?:\/\/teams\.(?:microsoft\.com|cloud\.microsoft)\/(l\/.*)$/i);
   return m ? `msteams:/${m[1]}` : undefined;
 }
 

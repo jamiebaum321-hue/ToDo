@@ -128,22 +128,24 @@ describe("deriveLinkTarget", () => {
     expect(t.mobile).toBe(t.web);
   });
 
-  it("converts a Teams permalink into the desktop scheme", () => {
-    const web = "https://teams.microsoft.com/l/message/19:abc@thread.tacv2/1699?tenantId=t";
+  it.each(["teams.microsoft.com", "teams.cloud.microsoft"])("converts a %s message permalink into app destinations", (host) => {
+    const web = `https://${host}/l/message/19:abc@thread.tacv2/1699?context=%7B%22contextType%22%3A%22chat%22%7D&tenantId=t`;
     const t = deriveLinkTarget({ provider: "teams", web });
-    expect(t.desktop).toBe("msteams:/l/message/19:abc@thread.tacv2/1699?tenantId=t");
+    expect(t.web).toBe(web);
+    expect(t.desktop).toBe("msteams:/l/message/19:abc@thread.tacv2/1699?context=%7B%22contextType%22%3A%22chat%22%7D&tenantId=t");
+    expect(t.mobile).toBe(t.desktop);
   });
 
-  it("opens Teams when a join link inherits the meeting's calendar provider", () => {
-    const web = "https://teams.microsoft.com/l/meetup-join/19%3Ameeting%40thread.v2/0?context=%7B%22Tid%22%3A%22tenant%22%7D";
-    const target = deriveLinkTarget({ provider: "outlook_calendar", web, mobile: web });
+  it.each(["teams.microsoft.com", "teams.cloud.microsoft"])("opens Teams when a %s join link inherits the calendar provider", (host) => {
+    const web = `https://${host}/l/meetup-join/19%3Ameeting%40thread.v2/0?context=%7B%22Tid%22%3A%22tenant%22%7D`;
+    const target = deriveLinkTarget({ provider: "outlook_calendar", web, desktop: web, mobile: web });
     expect(target.web).toBe(web);
-    expect(target.desktop).toBe(web.replace("https://teams.microsoft.com/", "msteams:/"));
+    expect(target.desktop).toBe(web.replace(`https://${host}/`, "msteams:/"));
     expect(chooseUrl(target, "windows")).toBe(target.desktop);
     expect(chooseUrl(target, "ios")).toBe(target.desktop);
     expect(chooseUrl(target, "android")).toBe(target.desktop);
     expect(chooseUrl(target, "windows", "web")).toBe(web);
-    const unrelated = deriveLinkTarget({ provider: "outlook_calendar", web: "https://teams.microsoft.com.example.com/l/meetup-join/1" });
+    const unrelated = deriveLinkTarget({ provider: "outlook_calendar", web: `https://${host}.example.com/l/meetup-join/1` });
     expect(unrelated.desktop).toBeNull();
   });
 
