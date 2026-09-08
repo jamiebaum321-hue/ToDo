@@ -61,8 +61,8 @@ export function ConnectView({ counts, tokens: initialTokens }: { counts: Record<
           Connect your assistant
         </h1>
         <p className="mt-2 max-w-[56ch] text-[14.5px] leading-relaxed" style={{ color: "var(--text-3)" }}>
-          ToDo is an MCP server. Point Claude or ChatGPT at it once and your subscription can read your list, replace it
-          each morning, and see what you have already cleared.
+          Connect your Claude or ChatGPT subscription, run your first sweep, then schedule it for each morning.
+          Your assistant can update the list and see what you have already cleared.
         </p>
       </div>
 
@@ -100,12 +100,19 @@ export function ConnectView({ counts, tokens: initialTokens }: { counts: Record<
           ) : (
             <Instructions
               steps={[
-                "Open ChatGPT → Settings → Connectors → Advanced settings → Create.",
-                "Name it ToDo, paste the server URL below, and choose OAuth for authentication.",
-                "ChatGPT opens ToDo in a new tab — sign in if asked, press Allow access, and you are connected. There is no token to paste.",
+                "In ChatGPT on the web, open Settings → Security and login and enable Developer mode.",
+                "Open Plugins, press +, and create an app named ToDo using the server URL below and OAuth authentication.",
+                "Sign in to ToDo and press Allow access. Finish creating the app, then select ToDo in the chat's Developer mode tools. There is no token to paste.",
               ]}
             >
               <Labelled label="Server URL" value={mcpUrl} mono />
+              <p className="text-[12.5px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+                Some workspaces show Apps → Create instead. Availability and write actions depend on your account
+                and workspace settings. See the{" "}
+                <a href="https://developers.openai.com/api/docs/guides/developer-mode" target="_blank" rel="noopener noreferrer" className="font-bold underline underline-offset-2">
+                  ChatGPT setup guide
+                </a>.
+              </p>
             </Instructions>
           )}
         </Step>
@@ -165,13 +172,17 @@ export function ConnectView({ counts, tokens: initialTokens }: { counts: Record<
       )}
 
       {/* The schedule ---------------------------------------------------- */}
-      <Step n={oauthClient ? 2 : 3} title="Set the morning run">
+      <Step n={oauthClient ? 2 : 3} title="Run once, then set the morning schedule">
         <p className="mb-3 text-[14px] leading-relaxed" style={{ color: "var(--text-3)" }}>
-          In Claude, create a scheduled task for 7:00 am. In ChatGPT, create a scheduled task at the same time. Paste
-          the instructions below as the task prompt — they tell your assistant to sweep every connector, sort what it
-          finds, and never re-raise anything you have already cleared.
+          First, paste the prompt below into a chat with ToDo and your mail, calendar, and chat apps enabled.
+          Check that your list updates and a prepared reply opens in the right conversation. Then reuse the prompt
+          in a scheduled task for 7:00 am in your assistant.
         </p>
-        <CopyBlock value={dailyTriagePrompt({ windowDays: "14" })} label="Copy the schedule prompt" />
+        <p className="mb-3 text-[12.5px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+          The schedule runs in your assistant. Its app access and action permissions determine what it can prepare;
+          a run may pause if it needs your approval. Check the first scheduled result before relying on it each day.
+        </p>
+        <CopyBlock value={dailyTriagePrompt({ windowDays: "14" })} label="Copy the run prompt" />
       </Step>
 
       {/* Every live connection, however it was made ----------------------- */}
