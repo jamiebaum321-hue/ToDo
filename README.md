@@ -185,7 +185,7 @@ Some connector forms only accept a URL with nowhere to put a header. For those t
 
 ### The morning run
 
-Create a scheduled task in Claude or ChatGPT for 7:00 am and paste the prompt the **Connect** page gives you (it is also served over MCP as the `daily_triage` prompt). It tells your assistant to:
+Run the prompt from **Connect** once in your assistant with ToDo and the relevant mail/calendar/chat apps enabled. Confirm that the list updates and a prepared reply opens the correct conversation. Then reuse that prompt in a scheduled task for 7:00 am (it is also served over MCP as `daily_triage`). The prompt tells your assistant to:
 
 1. call `get_run_context` **first** — which returns everything you have already handled;
 2. sweep every connector across the rolling window;
@@ -193,6 +193,10 @@ Create a scheduled task in Claude or ChatGPT for 7:00 am and paste the prompt th
 4. when enabled, save easy replies in their source conversations and read the saved drafts back;
 5. send the whole list with `replace: "window"` after a complete sweep, or `replace: "none"` if a connector could not be checked;
 6. respect `skippedTasks` and repair `linkGaps` before reporting the list ready.
+
+The schedule executes in the assistant, not in ToDo's housekeeping worker. Connected app availability and action permissions depend on the account and workspace, and an approval requirement can pause a scheduled run. Check its first result before relying on daily updates. See [ChatGPT scheduled tasks](https://help.openai.com/en/articles/10291617).
+
+For current ChatGPT setup, enable Developer mode on the web under Settings → Security and login, then use Plugins → + to create the ToDo app with OAuth. Select it in the chat's Developer mode tools. Some managed workspaces expose Apps → Create instead. Follow the account's available controls and the [current Developer mode guide](https://developers.openai.com/api/docs/guides/developer-mode); a successful connection alone does not prove draft-writing permission or an unattended schedule.
 
 ## The MCP surface
 
