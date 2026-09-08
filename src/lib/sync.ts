@@ -365,7 +365,7 @@ export async function syncTasks(
             ? "open"
             : existing.status;
 
-      await prisma.$transaction([
+      const writes: Prisma.PrismaPromise<unknown>[] = [
         prisma.taskLink.deleteMany({ where: { taskId: existing.id } }),
         prisma.task.update({
           where: { id: existing.id },
@@ -389,7 +389,8 @@ export async function syncTasks(
           : !sameSource && existing.draft
             ? [prisma.draft.deleteMany({ where: { taskId: existing.id } })]
             : []),
-      ]);
+      ];
+      await prisma.$transaction(writes);
 
       if (unchanged) result.unchanged += 1;
       else result.updated += 1;
