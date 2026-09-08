@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { deriveLinkTarget } from "./deeplinks";
 import { normalizeProvider } from "./providers";
 import type { TaskInput } from "./validation";
-import { normalizeMailLink, outlookWebLink, parseOutlookWebLink, toBase64Url } from "./mail-links";
+import { normalizeMailLink, outlookWebLink, parseOutlookWebLink, toOutlookRestId } from "./mail-links";
 
 export const isReplyDraft = (kind: string) => kind === "reply" || kind === "reply_all";
 
@@ -27,7 +27,7 @@ export function prepareDraft(input: TaskInput): { row: Prisma.DraftCreateWithout
   else if (reply && provider === "gmail" && (!input.source?.threadId || d.threadId !== input.source.threadId)) issue = "The saved Gmail reply draft must have the same threadId as the source conversation.";
   else if (reply && provider === "outlook" && (!input.source?.externalId || d.replyToId !== input.source.externalId)) issue = "Create the Outlook draft with createReply/createReplyAll on source.externalId and supply that id as draft.replyToId.";
   else if (!reply && !d.to) issue = "Supply draft.to so a forward or new draft can be matched to the selected delegate.";
-  else if (provider === "outlook" && suppliedWeb && (!outlookLink || outlookLink.itemId !== toBase64Url(d.externalId))) issue = "Supply the saved Outlook draft's own Graph webLink, matching draft.externalId; an inbox or source message URL is not a draft link.";
+  else if (provider === "outlook" && suppliedWeb && (!outlookLink || outlookLink.itemId !== toOutlookRestId(d.externalId))) issue = "Supply the saved Outlook draft's own Graph webLink, matching draft.externalId; an inbox or source message URL is not a draft link.";
 
   const sourceOutlookLink = input.source?.webUrl ?? input.source?.url;
   const outlookHost = sourceOutlookLink ? parseOutlookWebLink(normalizeMailLink(sourceOutlookLink))?.host : undefined;

@@ -41,7 +41,7 @@ describe("saved draft contract", () => {
     const d = { ...saved, externalId: "AAMk_draft=", replyToId: "AAMk_source=" };
     const result = prepareDraft(input(d, outlook));
     expect(result.issue).toBeNull();
-    expect(result.row?.webUrl).toContain("ItemID=AAMk%2Fdraft%3D");
+    expect(result.row?.webUrl).toContain("ItemID=AAMk%2Bdraft%3D");
     expect(result.row?.mobileUrl).toContain("restId=AAMk_source%3D");
     expect(prepareDraft(input({ ...d, replyToId: "wrong" }, outlook)).issue).toContain("createReply");
   });
@@ -50,6 +50,14 @@ describe("saved draft contract", () => {
     for (const web of ["https://outlook.office.com/mail", "https://outlook.office.com/owa/?ItemID=source&exvsurl=1"]) {
       expect(prepareDraft(input({ ...saved, externalId: "draft", replyToId: "source", web }, outlook)).issue).toContain("own Graph webLink");
     }
+  });
+  it("accepts a provider draft webLink whose Exchange REST id contains both substitutions", () => {
+    const outlook = { ...source, provider: "outlook", externalId: "source" };
+    const web = "https://outlook.office365.com/owa/?ItemID=AAMk%2B%2F%2Fdraft%3D&exvsurl=1";
+    const result = prepareDraft(input({ ...saved, externalId: "AAMk_--draft=", replyToId: "source", web }, outlook));
+    expect(result.issue).toBeNull();
+    expect(result.row?.webUrl).toBe(web);
+    expect(prepareDraft(input({ ...saved, externalId: "AAMk-__draft=", replyToId: "source", web }, outlook)).issue).toContain("own Graph webLink");
   });
   it("keeps a personal Outlook draft on the source's live.com host", () => {
     const outlook = { ...source, provider: "outlook", externalId: "source", url: "https://outlook.live.com/owa/?ItemID=source&exvsurl=1" };

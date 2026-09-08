@@ -14,7 +14,7 @@ import {
   outlookSchemeFromWeb,
   outlookWebLink,
   parseOutlookWebLink,
-  toBase64Url,
+  toOutlookRestId,
 } from "@/lib/mail-links";
 
 /**
@@ -27,7 +27,7 @@ import {
 const REAL_WEBLINK =
   "https://outlook.office365.com/owa/?ItemID=AAMkADRlY2ZjZGQx%2BrywUxVqo%2FAAA4T%2FVnAAA%3D&exvsurl=1&viewmodel=ReadMessageItem";
 
-const RETIRED_DEEPLINK = "https://outlook.office.com/mail/deeplink/read/AAMkADRlY2ZjZGQx-rywUxVqo_AAA4T_VnAAA%3D";
+const RETIRED_DEEPLINK = "https://outlook.office.com/mail/deeplink/read/AAMkADRlY2ZjZGQx_rywUxVqo-AAA4T-VnAAA%3D";
 
 describe("gmail: resolve the mailbox by identity, never by index", () => {
   it("builds ?authuser= from the address", () => {
@@ -95,20 +95,19 @@ describe("outlook: the webLink is the browser link that works", () => {
   });
 
   it("builds the same owa shape Microsoft emits when only an id is known", () => {
-    // Graph ids arrive base64url; the owa ItemID wants plain base64, encoded.
+    // Match Exchange REST ID conversion, which differs from RFC 4648 base64url.
     expect(outlookWebLink("AAMk-a_b=")).toBe(
-      "https://outlook.office365.com/owa/?ItemID=AAMk%2Ba%2Fb%3D&exvsurl=1&viewmodel=ReadMessageItem",
+      "https://outlook.office365.com/owa/?ItemID=AAMk%2Fa%2Bb%3D&exvsurl=1&viewmodel=ReadMessageItem",
     );
   });
 
-  it("puts a draft in the same owa container, without the read-pane hint", () => {
-    // Field result: mail/drafts/id/<id> showed no message at all.
-    expect(outlookWebLink("d-1_x", "draft")).toBe("https://outlook.office365.com/owa/?ItemID=d%2B1%2Fx&exvsurl=1");
+  it("retains the view hint required to open a saved draft instead of the inbox", () => {
+    expect(outlookWebLink("d-1_x", "draft")).toBe("https://outlook.office365.com/owa/?ItemID=d%2F1%2Bx&exvsurl=1&viewmodel=ReadMessageItem");
   });
 
-  it("parses the ItemID out of a webLink, converted to base64url for the app", () => {
+  it("parses the ItemID out of a webLink in Exchange REST format for the app", () => {
     const parsed = parseOutlookWebLink(REAL_WEBLINK);
-    expect(parsed?.itemId).toBe("AAMkADRlY2ZjZGQx-rywUxVqo_AAA4T_VnAAA=");
+    expect(parsed?.itemId).toBe("AAMkADRlY2ZjZGQx_rywUxVqo-AAA4T-VnAAA=");
   });
 
   it("builds the mobile scheme that field-tested as opening the message", () => {
@@ -118,10 +117,10 @@ describe("outlook: the webLink is the browser link that works", () => {
 
   it("derives the app handoff from either stored browser shape", () => {
     expect(outlookSchemeFromWeb(REAL_WEBLINK)).toBe(
-      "ms-outlook://emails/message?restId=AAMkADRlY2ZjZGQx-rywUxVqo_AAA4T_VnAAA%3D",
+      "ms-outlook://emails/message?restId=AAMkADRlY2ZjZGQx_rywUxVqo-AAA4T-VnAAA%3D",
     );
     expect(outlookSchemeFromWeb(RETIRED_DEEPLINK)).toBe(
-      "ms-outlook://emails/message?restId=AAMkADRlY2ZjZGQx-rywUxVqo_AAA4T_VnAAA%3D",
+      "ms-outlook://emails/message?restId=AAMkADRlY2ZjZGQx_rywUxVqo-AAA4T-VnAAA%3D",
     );
     expect(outlookSchemeFromWeb("https://mail.google.com/mail/#all/t1")).toBeNull();
     expect(outlookSchemeFromWeb(null)).toBeNull();
@@ -134,7 +133,7 @@ describe("outlook: the webLink is the browser link that works", () => {
   });
 
   it("converts ids defensively in both directions", () => {
-    expect(toBase64Url("a+b/c=")).toBe("a-b_c=");
+    expect(toOutlookRestId("a+b/c=")).toBe("a_b-c=");
     expect(isOutlookScheme("ms-outlook://emails/message?restId=x")).toBe(true);
     expect(isOutlookScheme("https://outlook.office.com/x")).toBe(false);
   });
@@ -205,11 +204,9 @@ describe("app schemes: only the ones a device confirmed", () => {
     expect(() => assertSafeMailLink("googlegmail:///cv=t1", { allowOutlookScheme: true })).not.toThrow();
   });
 
-  it("builds an Outlook draft link in the container that works, minus the read-pane hint", () => {
-    // Field result: mail/drafts/id/<id> opened Outlook on the web with no
-    // message shown. The owa ItemID container is the proven one.
+  it("builds an Outlook draft link with its own id and required view hint", () => {
     expect(outlookWebLink("AAMk-d_1=", "draft")).toBe(
-      "https://outlook.office365.com/owa/?ItemID=AAMk%2Bd%2F1%3D&exvsurl=1",
+      "https://outlook.office365.com/owa/?ItemID=AAMk%2Fd%2B1%3D&exvsurl=1&viewmodel=ReadMessageItem",
     );
     expect(outlookDraftsFolder()).toBe("https://outlook.office.com/mail/drafts");
   });

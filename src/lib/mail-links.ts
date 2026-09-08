@@ -69,17 +69,22 @@ export function isVerifiedScheme(url: string | null | undefined): boolean {
   return !!url && VERIFIED_SCHEMES.some((re) => re.test(url));
 }
 
-/** Graph REST ids are base64url; the webLink's ItemID is plain base64. */
-export function toBase64Url(id: string): string {
-  return id.replace(/\+/g, "-").replace(/\//g, "_");
+/**
+ * Exchange REST IDs use '/' -> '-' and '+' -> '_', unlike RFC 4648 base64url.
+ * Match Office.context.mailbox.convertToRestId / convertToEwsId:
+ * https://appsforoffice.microsoft.com/lib/1/hosted/outlook-web-16.01.debug.js
+ * Reversing these substitutions sends real draft links back to the inbox.
+ */
+export function toOutlookRestId(id: string): string {
+  return id.replace(/\//g, "-").replace(/\+/g, "_");
 }
 
-function fromBase64Url(id: string): string {
-  return id.replace(/-/g, "+").replace(/_/g, "/");
+function fromOutlookRestId(id: string): string {
+  return id.replace(/-/g, "/").replace(/_/g, "+");
 }
 
 /**
- * Pull the item id out of a Graph `webLink`, converted to base64url — the form
+ * Pull the item id out of a Graph `webLink`, converted to Exchange REST — the form
  * the ms-outlook:// mobile scheme wants as its restId.
  */
 export function parseOutlookWebLink(url: string): { host: string; itemId: string } | null {
@@ -90,25 +95,22 @@ export function parseOutlookWebLink(url: string): { host: string; itemId: string
   // been seen as ItemID and itemid in the wild, so match case-insensitively.
   for (const [key, value] of new URLSearchParams(m[2])) {
     if (key.toLowerCase() === "itemid" && value) {
-      return { host: m[1].toLowerCase(), itemId: toBase64Url(value) };
+      return { host: m[1].toLowerCase(), itemId: toOutlookRestId(value) };
     }
   }
   return null;
 }
 
 /**
- * The Outlook browser link for an item id (base64url in, as Graph returns it).
+ * The Outlook browser link for an item id in Graph's default Exchange REST format.
  *
- * Deliberately the same owa shape Microsoft's own webLink uses, because that
- * is the shape that field-tested as opening the exact thread — for drafts too:
- * `mail/drafts/id/<id>` opened Outlook on the web showing no message at all
- * (field-tested), so a draft now rides the same proven container. The only
- * difference is the view hint, which is dropped for a draft: ReadMessageItem
- * asks for the reading pane, and a draft wants the composer.
+ * Keep Microsoft's view hint for drafts too. Live validation showed that
+ * omitting it redirects to the inbox, while ReadMessageItem opens the saved
+ * draft with its response and a Continue editing action.
  */
-export function outlookWebLink(itemId: string, kind: "message" | "draft" = "message", host = "outlook.office365.com"): string {
-  const owa = `https://${host}/owa/?ItemID=${encodeURIComponent(fromBase64Url(itemId))}&exvsurl=1`;
-  return kind === "draft" ? owa : `${owa}&viewmodel=ReadMessageItem`;
+export function outlookWebLink(itemId: string, _kind: "message" | "draft" = "message", host = "outlook.office365.com"): string {
+  const owa = `https://${host}/owa/?ItemID=${encodeURIComponent(fromOutlookRestId(itemId))}&exvsurl=1`;
+  return `${owa}&viewmodel=ReadMessageItem`;
 }
 
 /** Where a draft lives when its own id is unknown: the folder, not a blank composer. */
@@ -125,7 +127,7 @@ export function outlookDraftsFolder(): string {
  * that conversation anyway.
  */
 export function outlookMobileLink(itemId: string): string {
-  return `ms-outlook://emails/message?restId=${encodeURIComponent(toBase64Url(itemId))}`;
+  return `ms-outlook://emails/message?restId=${encodeURIComponent(toOutlookRestId(itemId))}`;
 }
 
 /**

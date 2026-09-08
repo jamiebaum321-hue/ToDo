@@ -6,11 +6,12 @@ import {
   buildGmailWebUrl,
   gmailMobileLink,
   isCustomScheme,
+  isOutlookScheme,
   isVerifiedScheme,
   normalizeMailLink,
   outlookMobileLink,
   outlookSchemeFromWeb,
-  toBase64Url,
+  toOutlookRestId,
 } from "./mail-links";
 import { providerMeta } from "./providers";
 
@@ -200,7 +201,7 @@ function mailSlots(webUrl: string | null, desktopUrl: string | null, mobileUrl: 
 
   const outlookAnchor =
     ids.provider === "outlook" && isDraft && ids.outlookItemId
-      ? outlookMobileLink(toBase64Url(ids.outlookItemId))
+      ? outlookMobileLink(toOutlookRestId(ids.outlookItemId))
       : null;
   const gmailApp = gmailish && thread ? gmailMobileLink(thread) : null;
   const scheme = isCalendar ? null : isDraft ? (outlookAnchor ?? gmailApp) : (outlookSchemeFromWeb(web) ?? gmailApp);
@@ -209,6 +210,9 @@ function mailSlots(webUrl: string | null, desktopUrl: string | null, mobileUrl: 
   let storedMobile = real(mobileUrl);
   if (isCustomScheme(storedMobile) && !isVerifiedScheme(storedMobile)) storedMobile = null;
   if (isGmailScheme(storedMobile) && storedMobile !== gmailApp) storedMobile = null;
+  // Older rows encoded Outlook IDs with the standard base64url alphabet.
+  // Prefer the message identity recovered from its provider webLink.
+  if (isOutlookScheme(storedMobile) && scheme && storedMobile !== scheme) storedMobile = null;
   // A draft's own web link is about the draft; its app link must be the thread.
   if (isDraft && isCustomScheme(storedMobile) && storedMobile !== scheme) storedMobile = null;
 
@@ -341,6 +345,7 @@ export function serializeTaskForAgent(task: TaskWithRelations) {
       threadId: task.draft.threadId, account: task.draft.account, replyToId: task.draft.replyToId,
       to: task.draft.to, verifiedAt: task.draft.verifiedAt?.toISOString() ?? null,
       body: task.draft.body, subject: task.draft.subject,
+      web: normalizeMailLink(task.draft.webUrl),
       guidance: "Read this existing draft before creating another. Preserve user edits. Repair an unverified draft using attach_draft after saving and reading it back from the provider.",
     } : null,
     actionIssues: dto.actionIssues,

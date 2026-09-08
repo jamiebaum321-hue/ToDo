@@ -46,7 +46,7 @@ describe("deriveLinkTarget", () => {
   it("mines the webLink for the id, so the phone gets the app even when that URL is all we got", () => {
     const graphLink = "https://outlook.office365.com/owa/?ItemID=AAMkAGI2%2BTG93%2FAAA%3D&exvsurl=1";
     const t = deriveLinkTarget({ provider: "outlook", web: graphLink });
-    expect(t.mobile).toBe("ms-outlook://emails/message?restId=AAMkAGI2-TG93_AAA%3D");
+    expect(t.mobile).toBe("ms-outlook://emails/message?restId=AAMkAGI2_TG93-AAA%3D");
     expect(t.desktop ?? null).toBeNull();
   });
 
