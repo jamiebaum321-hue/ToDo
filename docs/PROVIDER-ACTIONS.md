@@ -84,7 +84,7 @@ Send an Outlook invitation **email** as the source, the event as a separate `kin
 
 Native mail URL schemes are best-effort handoffs, not supported guarantees that a particular screen opened. Gmail's conversation scheme is undocumented. The existing repository records device observations, but the September 2026 changes were not validated on physical iOS/Android devices or installed Outlook/Teams clients. A browser can detect a handoff attempt, not whether the destination found the message. The browser alternative therefore stays visible, including after an apparent successful app launch. Native Outlook calendar navigation is not claimed: the invite email provides RSVP, with the calendar event available through its webLink.
 
-Teams URLs preserve tenant and conversation context. [Teams deep links](https://learn.microsoft.com/en-us/microsoftteams/platform/concepts/build-and-test/deep-link-teams).
+Teams URLs preserve tenant and conversation context. Use the message's **Copy link** action; the browser address bar may only identify the app. Both `teams.microsoft.com/l/...` and the `teams.cloud.microsoft/l/...` links copied by the current Teams UI are recognized. ToDo retains the original web link and derives the corresponding app path without rewriting its message context. [Teams deep links](https://learn.microsoft.com/en-us/microsoftteams/platform/concepts/build-and-test/deep-link-teams).
 
 ## Repair and lifecycle
 

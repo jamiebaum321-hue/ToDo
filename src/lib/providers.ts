@@ -110,7 +110,7 @@ export function providerMeta(input: unknown): ProviderMeta {
 
 /** A meeting's Teams destination can arrive carrying its calendar's provider. */
 export function resolveLinkProvider(input: unknown, web?: string | null): ProviderKey {
-  return /^https:\/\/teams\.microsoft\.com\/l\//i.test(web?.trim() ?? "")
+  return /^https:\/\/teams\.(?:microsoft\.com|cloud\.microsoft)\/l\//i.test(web?.trim() ?? "")
     ? "teams"
     : normalizeProvider(input);
 }

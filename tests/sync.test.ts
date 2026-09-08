@@ -392,9 +392,9 @@ describe("rows stored before mail-links.ts existed", () => {
 });
 
 describe("the shapes found on a live account", () => {
-  it("repairs existing Teams join links without changing their calendar destination", async () => {
+  it.each(["teams.microsoft.com", "teams.cloud.microsoft"])("repairs existing %s join links without changing their calendar destination", async (host) => {
     const calendar = "https://outlook.office365.com/owa/?itemid=calendar1&path=/calendar/item";
-    const join = "https://teams.microsoft.com/l/meetup-join/19%3Ameeting%40thread.v2/0?context=%7B%22Tid%22%3A%22tenant%22%7D";
+    const join = `https://${host}/l/meetup-join/19%3Ameeting%40thread.v2/0?context=%7B%22Tid%22%3A%22tenant%22%7D`;
     await sync([{
       title: "Prepare for the staff meeting", bucket: "urgent_important",
       source: { provider: "outlook_calendar", type: "meeting", externalId: "calendar1", url: calendar },
@@ -410,7 +410,7 @@ describe("the shapes found on a live account", () => {
     const dto = serializeTask(task);
     const meeting = dto.links.find(l => l.kind === "join")!;
     expect(meeting.provider).toBe("teams");
-    expect(meeting.desktop).toBe(join.replace("https://teams.microsoft.com/", "msteams:/"));
+    expect(meeting.desktop).toBe(join.replace(`https://${host}/`, "msteams:/"));
     expect(meeting.mobile).toBe(meeting.desktop);
     expect(meeting.web).toBe(join);
     expect(dto.links.find(l => l.kind === "source")?.mobile).toBe(calendar);

@@ -60,12 +60,13 @@ describe("provider actions through sync, storage and serialization", () => {
     await sync({ confidence: agent.confidence, estimateMinutes: agent.estimateMinutes, position: agent.position, source: { ...source, snippet: agent.source.snippet } });
     expect(await stored()).toMatchObject({ confidence: 0.8, estimateMinutes: 20, position: 7, sourceSnippet: "Original request context" });
   });
-  it("keeps Teams app permalinks through the entire write/read path on desktop and phone", async () => {
-    await sync({ source: { provider: "teams", externalId: "1699", url: "https://teams.microsoft.com/l/message/19:chat@thread.v2/1699?tenantId=tenant-1" } });
+  it.each(["teams.microsoft.com", "teams.cloud.microsoft"])("keeps %s message permalinks through write/read on desktop and phone", async (host) => {
+    const web = `https://${host}/l/message/19:chat@thread.v2/1699?context=%7B%22contextType%22%3A%22chat%22%7D&tenantId=tenant-1`;
+    await sync({ source: { provider: "teams", externalId: "1699", url: web } });
     const dto = serializeTask(await stored());
     for (const platform of ["windows", "macos", "ios", "android"] as const) {
-      expect(chooseUrl(dto.links[0], platform)).toBe("msteams:/l/message/19:chat@thread.v2/1699?tenantId=tenant-1");
-      expect(chooseUrl(dto.links[0], platform, "web")).toContain("https://teams.microsoft.com/l/message/");
+      expect(chooseUrl(dto.links[0], platform)).toBe("msteams:/l/message/19:chat@thread.v2/1699?context=%7B%22contextType%22%3A%22chat%22%7D&tenantId=tenant-1");
+      expect(chooseUrl(dto.links[0], platform, "web")).toBe(web);
     }
   });
   it("keeps the invite email, calendar event and Teams join as separate actions", async () => {
