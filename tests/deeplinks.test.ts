@@ -134,6 +134,19 @@ describe("deriveLinkTarget", () => {
     expect(t.desktop).toBe("msteams:/l/message/19:abc@thread.tacv2/1699?tenantId=t");
   });
 
+  it("opens Teams when a join link inherits the meeting's calendar provider", () => {
+    const web = "https://teams.microsoft.com/l/meetup-join/19%3Ameeting%40thread.v2/0?context=%7B%22Tid%22%3A%22tenant%22%7D";
+    const target = deriveLinkTarget({ provider: "outlook_calendar", web, mobile: web });
+    expect(target.web).toBe(web);
+    expect(target.desktop).toBe(web.replace("https://teams.microsoft.com/", "msteams:/"));
+    expect(chooseUrl(target, "windows")).toBe(target.desktop);
+    expect(chooseUrl(target, "ios")).toBe(target.desktop);
+    expect(chooseUrl(target, "android")).toBe(target.desktop);
+    expect(chooseUrl(target, "windows", "web")).toBe(web);
+    const unrelated = deriveLinkTarget({ provider: "outlook_calendar", web: "https://teams.microsoft.com.example.com/l/meetup-join/1" });
+    expect(unrelated.desktop).toBeNull();
+  });
+
   it("builds both halves of a Zoom join link, passcode included", () => {
     const t = deriveLinkTarget({ provider: "zoom", externalId: "812 3456 7890", passcode: "s3cret" });
     expect(t.web).toBe("https://zoom.us/j/81234567890?pwd=s3cret");

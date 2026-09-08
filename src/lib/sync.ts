@@ -1,7 +1,7 @@
 import type { Prisma, Task } from "@prisma/client";
 import { prisma } from "./db";
 import { normalizeBucket } from "./buckets";
-import { normalizeProvider } from "./providers";
+import { normalizeProvider, resolveLinkProvider } from "./providers";
 import { deriveLinkTarget, defaultLabel, hasAnyUrl } from "./deeplinks";
 import { assertSafeMailLink } from "./mail-links";
 import { prepareDraft } from "./drafts";
@@ -100,7 +100,7 @@ function buildLinkRows(input: TaskInput): Prisma.TaskLinkCreateWithoutTaskInput[
   }
 
   for (const [i, link] of (input.links ?? []).entries()) {
-    const rawProvider = normalizeProvider(link.provider ?? source?.provider);
+    const rawProvider = resolveLinkProvider(link.provider ?? source?.provider, link.web);
     const provider = link.kind === "calendar" && rawProvider === "outlook" ? "outlook_calendar" : link.kind === "calendar" && rawProvider === "gmail" ? "google_calendar" : rawProvider;
     const sameSource = link.kind === "source" && rawProvider === sourceProvider && (!link.externalId || link.externalId === source?.externalId);
     const account = link.account ?? (rawProvider === sourceProvider ? source?.account : undefined);
