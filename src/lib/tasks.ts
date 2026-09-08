@@ -1,7 +1,7 @@
 import type { Draft, Prisma, Task, TaskLink } from "@prisma/client";
 import { getBucket, type BucketKey } from "./buckets";
 import { deriveLinkTarget } from "./deeplinks";
-import { isReplyDraft } from "./drafts";
+import { hasMailboxUiReplyIdentity, isReplyDraft } from "./drafts";
 import {
   buildGmailWebUrl,
   gmailMobileLink,
@@ -240,7 +240,10 @@ export function serializeTask(task: TaskWithRelations, opts?: { includeDrafts?: 
   const d = task.draft;
   const sameMailbox = d?.provider === task.sourceProvider && (!task.sourceAccount || d?.account?.toLowerCase() === task.sourceAccount.toLowerCase());
   const sameConversation = !reply || (sameMailbox && (d?.provider === "gmail" ? d.threadId === task.sourceThreadId : d?.provider === "outlook" ? d.replyToId === task.sourceExternalId : true));
-  const draftReady = !!(d?.verifiedAt && d.externalId && d.webUrl && sameConversation);
+  const hasDraftIdentity = d?.verificationMethod === "mailbox_ui"
+    ? !!task.sourceAccount && hasMailboxUiReplyIdentity(d)
+    : !!d?.externalId;
+  const draftReady = !!(d?.verifiedAt && hasDraftIdentity && d.webUrl && sameConversation);
   const actionIssues: string[] = [];
   if (task.sourceProvider === "gmail" && !task.sourceThreadId) actionIssues.push("The exact Gmail conversation is missing. Ask your assistant to repair this task's email link.");
   if (task.sourceProvider === "gmail" && !task.sourceAccount?.includes("@")) actionIssues.push("The Gmail mailbox is missing. Your assistant needs to add the account containing this email.");
@@ -324,6 +327,9 @@ export function serializeTaskForAgent(task: TaskWithRelations) {
     status: task.status,
     origin: task.origin,
     reason: task.reason,
+    confidence: task.confidence,
+    estimateMinutes: task.estimateMinutes,
+    position: task.position,
     tags: parseTags(task.tags),
     dueAt: task.dueAt?.toISOString() ?? null,
     snoozedUntil: task.snoozedUntil?.toISOString() ?? null,
@@ -338,16 +344,20 @@ export function serializeTaskForAgent(task: TaskWithRelations) {
       account: task.sourceAccount,
       from: task.sourceFrom,
       subject: task.sourceSubject,
+      snippet: task.sourceSnippet,
       receivedAt: task.sourceReceivedAt?.toISOString() ?? null,
     },
     hasDraft: dto.draft?.ready ?? false,
     draft: task.draft ? {
       provider: task.draft.provider, kind: task.draft.kind, externalId: task.draft.externalId,
+      verificationMethod: task.draft.verificationMethod,
       threadId: task.draft.threadId, account: task.draft.account, replyToId: task.draft.replyToId,
       to: task.draft.to, verifiedAt: task.draft.verifiedAt?.toISOString() ?? null,
       body: task.draft.body, subject: task.draft.subject,
       web: normalizeMailLink(task.draft.webUrl),
-      guidance: "Read this existing draft before creating another. Preserve user edits. Repair an unverified draft using attach_draft after saving and reading it back from the provider.",
+      guidance: task.draft.verificationMethod === "mailbox_ui"
+        ? "For this mailbox_ui reference, the API draft id is unknown. Check for an existing draft by this mailbox and thread (list drafts/read the conversation) before editing or creating anything. Preserve user edits, do not invent an id or create a duplicate, and reopen the saved reply to verify it before attaching an updated receipt."
+        : "Read this existing draft before creating another. Preserve user edits. Repair an unverified draft using attach_draft after saving and reading it back from the provider.",
     } : null,
     actionIssues: dto.actionIssues,
     links: (task.links ?? []).filter(l => l.kind !== "draft").map((l) => {

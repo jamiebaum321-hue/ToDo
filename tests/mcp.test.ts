@@ -173,6 +173,28 @@ describe("tools", () => {
     expect(await prisma.draft.count({ where: { taskId: task.id } })).toBe(0);
   });
 
+  it("attaches an explicitly reopened Gmail reply through MCP without requiring an invented API id", async () => {
+    await call("create_task", { title: "Reply to Marta", bucket: "urgent_important",
+      source: { provider: "gmail", externalId: "marta-ui", threadId: "marta-thread", account: "owner@example.com" },
+      draft: { externalId: "unverified-old-id", body: "Old suggestion" },
+    });
+    const task = await prisma.task.findFirstOrThrow({ where: { userId: actor.user.id }, include: { draft: true } });
+    const receipt = { id: task.id, provider: "gmail", kind: "reply", verificationMethod: "mailbox_ui", verifiedAt: new Date().toISOString(),
+      account: "owner@example.com", threadId: "marta-thread", to: "marta@example.com", subject: "Re: Proposal", body: "Preserved composed reply" };
+    const invalid: any = await call("attach_draft", { ...receipt, account: "wrong@example.com" });
+    expect(invalid.result.isError).toBe(true);
+    const attached: any = await call("attach_draft", receipt);
+    expect(attached.result.isError).not.toBe(true);
+    const current = await prisma.task.findUniqueOrThrow({ where: { id: task.id }, include: { draft: true } });
+    expect(current.status).toBe("open");
+    expect(current.draft).toMatchObject({ id: task.draft!.id, externalId: null, verificationMethod: "mailbox_ui", body: receipt.body });
+    expect(await prisma.draft.count({ where: { taskId: task.id } })).toBe(1);
+    const returned = toolPayload(await call("get_task", { id: task.id }));
+    expect(returned.hasDraft).toBe(true);
+    expect(returned.draft.verificationMethod).toBe("mailbox_ui");
+    expect(await prisma.suppression.count()).toBe(0);
+  });
+
   it("detaches a stale draft without completing or deleting its task", async () => {
     const task = await prisma.task.create({ data: { userId: actor.user.id, title: "Still needs a reply", bucket: "urgent_important", draft: { create: { provider: "gmail", externalId: "gone", verifiedAt: new Date() } } } });
     const res: any = await call("detach_draft", { id: task.id, reason: "deleted" });

@@ -38,6 +38,7 @@ export const linkInput = z
 export const draftInput = z.object({
   provider: z.string().trim().max(40).optional(),
   kind: z.enum(["reply", "reply_all", "forward", "new"]).default("reply"),
+  verificationMethod: z.enum(["provider_api", "mailbox_ui"]).default("provider_api"),
   subject: z.string().trim().max(300).optional(),
   body: z.string().max(8000).optional(),
   externalId: z.string().trim().max(400).optional(),

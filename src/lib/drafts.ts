@@ -6,10 +6,21 @@ import { normalizeMailLink, outlookWebLink, parseOutlookWebLink, toOutlookRestId
 
 export const isReplyDraft = (kind: string) => kind === "reply" || kind === "reply_all";
 
+/** Gmail's UI can confirm a persisted reply without exposing its API draft ID. */
+export function hasMailboxUiReplyIdentity(d: {
+  verificationMethod?: string; provider?: string | null; kind: string;
+  externalId?: string | null; account?: string | null; threadId?: string | null;
+  to?: string | null; subject?: string | null; body?: string | null;
+}): boolean {
+  return !!(d.verificationMethod === "mailbox_ui" && d.provider === "gmail" && isReplyDraft(d.kind)
+    && d.externalId == null && d.account?.includes("@") && d.threadId?.trim()
+    && d.to?.includes("@") && d.subject?.trim() && d.body?.trim());
+}
+
 /** A body is a suggestion. A saved draft needs provider identity and a read-back receipt. */
 export function prepareDraft(input: TaskInput): { row: Prisma.DraftCreateWithoutTaskInput | null; issue: string | null } {
   const d = input.draft;
-  if (!d || ![d.body, d.externalId, d.url, d.web].some(Boolean)) return { row: null, issue: null };
+  if (!d || ![d.body, d.externalId, d.url, d.web, d.verifiedAt].some(Boolean)) return { row: null, issue: null };
   const provider = normalizeProvider(d.provider ?? input.source?.provider);
   const reply = isReplyDraft(d.kind);
   const sameProvider = provider === normalizeProvider(input.source?.provider);
@@ -17,17 +28,22 @@ export function prepareDraft(input: TaskInput): { row: Prisma.DraftCreateWithout
   const threadId = d.threadId ?? (reply && sameProvider ? input.source?.threadId : undefined);
   const suppliedWeb = normalizeMailLink(d.web ?? d.url);
   const outlookLink = provider === "outlook" && suppliedWeb ? parseOutlookWebLink(suppliedWeb) : null;
+  const mailboxUi = d.verificationMethod === "mailbox_ui";
   let issue: string | null = null;
 
-  if (!d.externalId || !d.verifiedAt) issue = "Save the draft in the provider, read it back, then supply draft.externalId and draft.verifiedAt. Body text alone is only a suggestion.";
+  if (mailboxUi && (provider !== "gmail" || !reply)) issue = "mailbox_ui verification is only supported for a Gmail reply/reply_all reopened in its source conversation.";
+  else if (mailboxUi && d.externalId != null) issue = "Omit draft.externalId for mailbox_ui verification. An unknown Gmail API draft id must not be invented or reused without checking it.";
+  else if (!d.verifiedAt || (!mailboxUi && !d.externalId)) issue = "Save the draft in the provider, read it back, then supply draft.externalId and draft.verifiedAt (or an explicit mailbox_ui receipt for a reopened Gmail reply). Body text alone is only a suggestion.";
   else if (d.verifiedAt.getTime() > Date.now() + 60_000) issue = "draft.verifiedAt cannot be in the future.";
+  else if (mailboxUi && !hasMailboxUiReplyIdentity({ ...d, provider })) issue = "For mailbox_ui verification, explicitly supply the reopened draft's account, threadId, to, subject, and composed body, plus verifiedAt. Text or a link alone cannot verify a saved reply.";
+  else if (mailboxUi && !input.source?.account) issue = "Supply source.account so the mailbox_ui reply can be matched to its source mailbox.";
   else if ((provider === "gmail" || provider === "outlook") && !account?.includes("@")) issue = "Supply draft.account (the mailbox that actually contains the draft).";
   else if (provider === "gmail" && !d.threadId) issue = "Supply draft.threadId from the saved Gmail draft's message.threadId, not its draft id or message id.";
   else if (reply && (!sameProvider || (input.source?.account && account?.toLowerCase() !== input.source.account.toLowerCase()))) issue = "The reply draft must belong to the source provider and mailbox.";
   else if (reply && provider === "gmail" && (!input.source?.threadId || d.threadId !== input.source.threadId)) issue = "The saved Gmail reply draft must have the same threadId as the source conversation.";
   else if (reply && provider === "outlook" && (!input.source?.externalId || d.replyToId !== input.source.externalId)) issue = "Create the Outlook draft with createReply/createReplyAll on source.externalId and supply that id as draft.replyToId.";
   else if (!reply && !d.to) issue = "Supply draft.to so a forward or new draft can be matched to the selected delegate.";
-  else if (provider === "outlook" && suppliedWeb && (!outlookLink || outlookLink.itemId !== toOutlookRestId(d.externalId))) issue = "Supply the saved Outlook draft's own Graph webLink, matching draft.externalId; an inbox or source message URL is not a draft link.";
+  else if (provider === "outlook" && suppliedWeb && (!d.externalId || !outlookLink || outlookLink.itemId !== toOutlookRestId(d.externalId))) issue = "Supply the saved Outlook draft's own Graph webLink, matching draft.externalId; an inbox or source message URL is not a draft link.";
 
   const sourceOutlookLink = input.source?.webUrl ?? input.source?.url;
   const outlookHost = sourceOutlookLink ? parseOutlookWebLink(normalizeMailLink(sourceOutlookLink))?.host : undefined;
@@ -42,6 +58,7 @@ export function prepareDraft(input: TaskInput): { row: Prisma.DraftCreateWithout
     issue,
     row: {
       provider, kind: d.kind, subject: d.subject ?? null, body: d.body ?? null,
+      verificationMethod: d.verificationMethod,
       externalId: d.externalId ?? null, verifiedAt: issue ? null : d.verifiedAt,
       threadId: threadId ?? null, account: account ?? null,
       replyToId: d.replyToId ?? null, to: d.to ?? null,

@@ -34,6 +34,32 @@ describe("provider actions through sync, storage and serialization", () => {
     expect(dto.draft?.web).toContain("#all/t-handoff");
     expect(serializeTaskForAgent(task).draft).toMatchObject({ externalId: "draft-1", threadId: "t-handoff" });
   });
+  it("persists a reopened Gmail reply receipt without an API id and preserves it through an incomplete sync", async () => {
+    const result = await sync({ draft: { ...saved, externalId: undefined, verificationMethod: "mailbox_ui", to: "vendor@example.com", subject: "Re: Proposal" } });
+    expect(result.linkGaps).toHaveLength(0);
+    const task = await stored();
+    expect(task.draft).toMatchObject({ verificationMethod: "mailbox_ui", externalId: null, body: "Reviewed response" });
+    expect(serializeTask(task).draft).toMatchObject({ ready: true, web: "https://mail.google.com/mail/?authuser=owner%40example.com#all/t-original" });
+    const agent = serializeTaskForAgent(task);
+    expect(agent.hasDraft).toBe(true);
+    expect(agent.draft).toMatchObject({ verificationMethod: "mailbox_ui", externalId: null, threadId: "t-original", to: "vendor@example.com" });
+    expect(agent.draft?.guidance).toContain("API draft id is unknown");
+    await sync({ draft: { body: "Unverified replacement" } });
+    expect(serializeTask(await stored()).draft).toMatchObject({ ready: true, body: "Reviewed response" });
+    expect(serializeTask({ ...task, sourceAccount: "other@example.com" }).draft?.ready).toBe(false);
+    expect(serializeTask({ ...task, sourceThreadId: "other-thread" }).draft?.ready).toBe(false);
+    expect(serializeTask({ ...task, sourceAccount: null }).draft?.ready).toBe(false);
+    for (const missing of ["to", "subject", "body", "verifiedAt"] as const) {
+      expect(serializeTask({ ...task, draft: { ...task.draft!, [missing]: null } }).draft?.ready).toBe(false);
+    }
+  });
+  it("returns repair-relevant metadata so an agent can preserve task estimates and source context", async () => {
+    await sync({ confidence: 0.8, estimateMinutes: 20, position: 7, source: { ...source, snippet: "Original request context" } });
+    const agent = serializeTaskForAgent(await stored());
+    expect(agent).toMatchObject({ confidence: 0.8, estimateMinutes: 20, position: 7, source: { snippet: "Original request context" } });
+    await sync({ confidence: agent.confidence, estimateMinutes: agent.estimateMinutes, position: agent.position, source: { ...source, snippet: agent.source.snippet } });
+    expect(await stored()).toMatchObject({ confidence: 0.8, estimateMinutes: 20, position: 7, sourceSnippet: "Original request context" });
+  });
   it("keeps Teams app permalinks through the entire write/read path on desktop and phone", async () => {
     await sync({ source: { provider: "teams", externalId: "1699", url: "https://teams.microsoft.com/l/message/19:chat@thread.v2/1699?tenantId=tenant-1" } });
     const dto = serializeTask(await stored());

@@ -5,6 +5,7 @@ import { taskInput } from "@/lib/validation";
 const source = { provider: "gmail", externalId: "message-original", threadId: "thread-original", account: "owner@example.com" };
 const input = (draft: Record<string, unknown>, origin = source) => taskInput.parse({ title: "Reply to vendor", bucket: "urgent_important", source: origin, draft });
 const saved = { externalId: "draft-123", verifiedAt: new Date(), threadId: "thread-original", account: "owner@example.com", body: "Thanks for the update." };
+const mailboxUi = { ...saved, externalId: undefined, verificationMethod: "mailbox_ui", to: "vendor@example.com", subject: "Re: Proposal" };
 
 describe("saved draft contract", () => {
   it("retains suggested text without pretending it exists in Gmail", () => {
@@ -20,6 +21,33 @@ describe("saved draft contract", () => {
     expect(result.issue).toBeNull();
     expect(result.row?.webUrl).toBe("https://mail.google.com/mail/?authuser=owner%40example.com#all/thread-original");
     expect(result.row?.mobileUrl).toBe("googlegmail:///cv=thread-original");
+  });
+  it("accepts an explicitly reopened Gmail reply without pretending to know its API draft id", () => {
+    const result = prepareDraft(input(mailboxUi));
+    expect(result.issue).toBeNull();
+    expect(result.row).toMatchObject({ verificationMethod: "mailbox_ui", externalId: null, verifiedAt: saved.verifiedAt,
+      to: "vendor@example.com", subject: "Re: Proposal", body: saved.body,
+      webUrl: "https://mail.google.com/mail/?authuser=owner%40example.com#all/thread-original" });
+    expect(prepareDraft(input({ ...mailboxUi, kind: "reply_all" })).issue).toBeNull();
+  });
+  it.each(["account", "threadId", "to", "subject", "body", "verifiedAt", "verificationMethod"])("does not infer a mailbox UI receipt when %s is missing", (field) => {
+    const result = prepareDraft(input({ ...mailboxUi, [field]: undefined }));
+    expect(result.issue).not.toBeNull();
+    expect(result.row).toMatchObject({ verifiedAt: null, webUrl: null, mobileUrl: null });
+  });
+  it.each(["body", "subject"])("rejects a blank %s in a mailbox UI receipt", (field) => {
+    expect(prepareDraft(input({ ...mailboxUi, [field]: "   " })).issue).not.toBeNull();
+  });
+  it("rejects a legacy or guessed API draft id on a mailbox UI receipt", () => {
+    expect(prepareDraft(input({ ...mailboxUi, externalId: "unverified-legacy-id" })).issue).toContain("Omit draft.externalId");
+  });
+  it("keeps mailbox UI verification restricted to the source Gmail reply", () => {
+    for (const kind of ["new", "forward"]) expect(prepareDraft(input({ ...mailboxUi, kind })).issue).toContain("only supported");
+    expect(prepareDraft(input(mailboxUi, { ...source, provider: "outlook" })).issue).toContain("only supported");
+    expect(prepareDraft(input({ ...mailboxUi, account: "other@example.com" })).issue).toContain("source provider and mailbox");
+    expect(prepareDraft(input({ ...mailboxUi, threadId: "other-thread" })).issue).toContain("same threadId");
+    expect(prepareDraft(input(mailboxUi, { ...source, account: "" })).issue).toContain("source.account");
+    expect(prepareDraft(input({ ...mailboxUi, verifiedAt: new Date(Date.now() + 600_000) })).issue).toContain("future");
   });
   it("rejects an orphan reply draft even when it was saved", () => {
     expect(prepareDraft(input({ ...saved, threadId: "unrelated-thread" })).issue).toContain("same threadId");
