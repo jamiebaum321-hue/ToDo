@@ -51,7 +51,7 @@ const SOURCE_SCHEMA = {
       "REQUIRED for Gmail (every messages.get returns one): the only id that lands ON the conversation. The web link opens the thread directly with it, and the Gmail app deep link resolves ONLY a thread id — handed a message id the app says 'failed to open link' (field-tested). Without it the user gets a search page at best.",
     ),
     account: str(
-      "REQUIRED when the user has more than one account: the mailbox address, e.g. 'jamie@company.com'. Gmail's /u/0/ numbering follows whatever order accounts were signed into the browser, so without this the link can open the wrong inbox entirely.",
+      "REQUIRED for mail: the authenticated mailbox address verified with the mail connector's profile, e.g. 'jamie@company.com'. It is NOT the ToDo login email. Keep it paired with the message/thread ids from that account. Gmail's /u/0/ numbering follows browser sign-in order, so using an index or the wrong address opens another inbox.",
     ),
     from: str("Sender, ideally 'Bob Whitaker <bob@acme.com>'."),
     subject: str("Original subject line or message title."),

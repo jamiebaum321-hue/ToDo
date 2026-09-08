@@ -308,6 +308,8 @@ describe("rows stored before mail-links.ts existed", () => {
           label: "Legacy Outlook row",
           provider: "outlook",
           webUrl: "https://outlook.office365.com/owa/?ItemID=AAMk%2Ba%2Fb%3D&exvsurl=1&viewmodel=ReadMessageItem",
+          // Persisted by the old, incorrect standard-base64url conversion.
+          mobileUrl: "ms-outlook://emails/message?restId=AAMk-a_b%3D",
           position: 8,
         },
         {
@@ -329,10 +331,9 @@ describe("rows stored before mail-links.ts existed", () => {
     // The webLink is served exactly as stored — it is the browser link that
     // field-tested as opening the thread; rewriting it is what broke it once.
     expect(outlook?.web).toBe("https://outlook.office365.com/owa/?ItemID=AAMk%2Ba%2Fb%3D&exvsurl=1&viewmodel=ReadMessageItem");
-    // The old rows stored nothing in the app slots, which is why phones were
-    // never offered the app. The scheme is derived from the web link; the
-    // desktop stays empty because no desktop Outlook accepts the scheme.
-    expect(outlook?.mobile).toBe("ms-outlook://emails/message?restId=AAMk-a_b%3D");
+    // Repair the stored mobile ID from the actual provider webLink. The
+    // standard base64url alphabet points at a different Exchange item.
+    expect(outlook?.mobile).toBe("ms-outlook://emails/message?restId=AAMk_a-b%3D");
     expect(outlook?.desktop ?? null).toBeNull();
 
     const gmail = dto.links.find((l) => l.label === "Legacy Gmail row");
@@ -364,7 +365,7 @@ describe("rows stored before mail-links.ts existed", () => {
 
     const duped = dto.links.find((l) => l.label === "Duplicated slots");
     expect(duped?.web).toBe(dupe);
-    expect(duped?.mobile).toBe("ms-outlook://emails/message?restId=AAMk-dupe%3D");
+    expect(duped?.mobile).toBe("ms-outlook://emails/message?restId=AAMk_dupe%3D");
 
     const real = dto.links.find((l) => l.label === "Real mobile");
     expect(real?.web).toBe("https://outlook.office.com/owa/?ItemID=AAMkReal&exvsurl=1&viewmodel=ReadMessageItem");

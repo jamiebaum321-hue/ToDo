@@ -24,6 +24,10 @@ For Gmail, save a reply with the real `message.threadId`, matching subject, and 
 
 For Outlook, create the draft with `createReply` / `createReplyAll` on the source message and update its body. Read back the draft's identity and `webLink`. Sending is a separate operation, performed by the user. [Microsoft Graph createReply](https://learn.microsoft.com/en-us/graph/api/message-createreply?view=graph-rest-1.0).
 
+Verify the mailbox using the mail connector's account/profile. The ToDo login address is not evidence of which mailbox contains an email. A source ID, thread ID, and saved draft ID must stay paired with the mailbox that returned them. A 404 in another mailbox is not proof of deletion.
+
+Outlook uses Exchange REST ID substitutions (`/` becomes `-`, `+` becomes `_`), not the standard base64url alphabet. This matches Microsoft's `convertToRestId` and `convertToEwsId` in the [Office SDK](https://appsforoffice.microsoft.com/lib/1/hosted/outlook-web-16.01.debug.js). Preserve the provider webLink. When deriving one, keep `viewmodel=ReadMessageItem` for a draft too: live Chrome validation found that dropping it returned to the inbox. The canonical link opens the saved draft and Outlook offers **Continue editing**.
+
 Example Gmail reply payload, using illustrative IDs:
 
 ```json
