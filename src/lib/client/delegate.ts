@@ -59,6 +59,9 @@ export function delegationTarget(task: TaskDTO, member: TeamMemberDTO): { target
   }
   const provider = task.source.provider;
   const params = new URLSearchParams({ to: message.to, subject: message.subject, body: message.body });
+  // Outlook and native mail handlers decode URI components, not form data.
+  // Spaces must be %20; a literal plus remains encoded as %2B.
+  const composeQuery = params.toString().replace(/\+/g, "%20");
   if (provider === "gmail" || provider === "google_calendar" || task.links.some(l => l.kind === "source" && l.web?.startsWith("https://mail.google.com/"))) {
     const web = new URL(gmailBase(task.source.account));
     web.searchParams.set("view", "cm");
@@ -66,14 +69,14 @@ export function delegationTarget(task: TaskDTO, member: TeamMemberDTO): { target
     web.searchParams.set("to", message.to);
     web.searchParams.set("su", message.subject);
     web.searchParams.set("body", message.body);
-    return { target: { web: web.toString(), mobile: `googlegmail:///co?${params}` }, saved: false, providerLabel: "Gmail" };
+    return { target: { web: web.toString(), mobile: `googlegmail:///co?${composeQuery}` }, saved: false, providerLabel: "Gmail" };
   }
   if (["outlook", "outlook_calendar", "teams"].includes(provider ?? "")) {
     const personal = task.links.some(l => l.web?.startsWith("https://outlook.live.com/"));
     const web = new URL(`https://${personal ? "outlook.live.com" : "outlook.office.com"}/mail/deeplink/compose`);
     for (const [key, value] of params) web.searchParams.set(key, value);
     if (task.source.account) web.searchParams.set("login_hint", task.source.account);
-    return { target: { web: web.toString(), mobile: `ms-outlook://compose?${params}` }, saved: false, providerLabel: "Outlook" };
+    return { target: { web: web.toString().replace(/\+/g, "%20"), mobile: `ms-outlook://compose?${composeQuery}` }, saved: false, providerLabel: "Outlook" };
   }
   const mailto = delegateMailto(task, member);
   return { target: { web: mailto, mobile: mailto, desktop: mailto }, saved: false, providerLabel: "your email app" };

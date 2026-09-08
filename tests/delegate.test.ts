@@ -75,6 +75,22 @@ describe("provider delegation actions", () => {
     expect(url.searchParams.get("subject")).toContain("Cedar Hall");
     expect(action.target.mobile).toContain("ms-outlook://compose?");
   });
+  it("preserves spaces and literal plus signs in Outlook and native composers", () => {
+    const member = { ...julie, email: "julie+work@company.com" };
+    const action = delegationTarget({ ...gmail, links: [], source: { ...gmail.source, provider: "outlook", subject: "Design + print" }, description: "A + B\nC++ & layout" }, member)!;
+    for (const target of [action.target.web!, action.target.mobile!]) {
+      expect(target).not.toContain("+");
+      const components = Object.fromEntries(target.split("?")[1].split("&").map(pair => {
+        const [key, value] = pair.split("=");
+        return [key, decodeURIComponent(value)];
+      }));
+      expect(components.to).toBe("julie+work@company.com");
+      expect(components.subject).toBe("Fwd: Design + print");
+      expect(components.body).toContain("A + B\nC++ & layout");
+      expect(components.body).toContain("Hi Julie,");
+    }
+    expect(delegationTarget(gmail, member)!.target.mobile).not.toContain("+");
+  });
   it("reuses a saved draft only for its own recipient", () => {
     const ready = { ...gmail, draft: { ready: true, kind: "forward", to: julie.email, web: "https://mail.google.com/mail/#all/forward-thread", providerLabel: "Gmail" } } as TaskDTO;
     expect(delegationTarget(ready, julie)).toMatchObject({ saved: true, target: { web: ready.draft!.web } });
