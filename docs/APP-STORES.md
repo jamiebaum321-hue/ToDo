@@ -8,7 +8,9 @@ deployed web app. They exist because of what they add on top of a browser tab:
   go through Firebase, which forwards to APNs for iOS.
 - **Universal links.** A notification tap opens the exact task, in the app.
 - **Native chrome.** Splash screen, status bar, and hand-off to the real
-  Outlook or Gmail app when you tap "Open in".
+  Outlook messages and Gmail/Outlook delegation composers. Gmail conversations
+  and saved replies open in its mobile website; the native Gmail app does not
+  reliably accept exact-conversation links.
 
 ## Read this first
 

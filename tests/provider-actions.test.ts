@@ -17,20 +17,40 @@ const sync = (task: Record<string, unknown>) => syncTasks(userId, syncInput.pars
 const stored = () => prisma.task.findFirstOrThrow({ where: { userId }, include: taskInclude });
 
 describe("provider actions through sync, storage and serialization", () => {
+  it.each(["googlegmail:///cv=t-original", "googlegmail:///cv=wrong", "https://mail.google.com/mail/#inbox"])("repairs a legacy Gmail handoff %s without changing its saved draft or task", async (legacy) => {
+    await sync({ draft: { ...saved, to: "vendor@example.com", subject: "Re: Proposal" } });
+    const task = await stored();
+    const legacyTask = { ...task,
+      links: task.links.map(link => ({ ...link, mobileUrl: legacy })),
+      draft: { ...task.draft!, mobileUrl: legacy },
+    };
+    const before = structuredClone(legacyTask);
+    const dto = serializeTask(legacyTask);
+    const mobile = "https://mail.google.com/mail/mu/?authuser=owner%40example.com#cv/All%20Mail/t-original";
+    expect(dto.links.find(link => link.kind === "source")?.mobile).toBe(mobile);
+    expect(dto.draft).toMatchObject({ ready: true, mobile, body: saved.body, to: "vendor@example.com", subject: "Re: Proposal" });
+    for (const preference of ["auto", "app", "web"] as const) {
+      expect(chooseUrl(dto.draft!, "ios", preference)).toBe(mobile);
+    }
+    expect(dto.status).toBe("open");
+    expect(legacyTask).toEqual(before);
+    expect(await stored()).toEqual(task);
+  });
+
   it("keeps a related Gmail conversation distinct from the source", async () => {
     await sync({ links: [{ kind: "custom", provider: "gmail", threadId: "t-related", account: "other@example.com" }] });
     const task = await stored();
     for (const dto of [serializeTask(task), serializeTaskForAgent(task)]) {
       const related = dto.links.find(l => l.kind === "custom")!;
       expect(related.web).toContain("authuser=other%40example.com#all/t-related");
-      expect(related.mobile).toBe("googlegmail:///cv=t-related");
+      expect(related.mobile).toBe("https://mail.google.com/mail/mu/?authuser=other%40example.com#cv/All%20Mail/t-related");
     }
   });
   it("keeps a saved delegation draft on its own conversation", async () => {
     await sync({ delegateTo: "Topaz", draft: { ...saved, kind: "new", to: "topaz@example.com", threadId: "t-handoff" } });
     const task = await stored();
     const dto = serializeTask(task);
-    expect(dto.draft).toMatchObject({ ready: true, to: "topaz@example.com", mobile: "googlegmail:///cv=t-handoff" });
+    expect(dto.draft).toMatchObject({ ready: true, to: "topaz@example.com", mobile: "https://mail.google.com/mail/mu/?authuser=owner%40example.com#cv/All%20Mail/t-handoff" });
     expect(dto.draft?.web).toContain("#all/t-handoff");
     expect(serializeTaskForAgent(task).draft).toMatchObject({ externalId: "draft-1", threadId: "t-handoff" });
   });

@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { ArrowUpRight, ExternalLink, Loader2 } from "lucide-react";
-import { alternateFor, chooseUrl, type LinkPreference, type LinkTarget } from "@/lib/deeplinks";
+import { alternateFor, browserUrlFor, chooseUrl, isMobilePlatform, type LinkPreference, type LinkTarget } from "@/lib/deeplinks";
+import { isGmailMobileWebLink } from "@/lib/mail-links";
 import { usePlatform } from "@/hooks/usePlatform";
 import { isNative, openExternal } from "@/lib/client/native";
 import { cn } from "@/lib/utils";
@@ -25,7 +26,10 @@ export function OpenButton({ label, target, accent, preference = "auto", variant
   const cleanup = useRef<() => void>(() => {});
   const url = chooseUrl(target, platform, preference);
   const alternate = alternateFor(target, url, platform);
-  const web = target.web && /^https?:/i.test(target.web) ? target.web : null;
+  const browserUrl = browserUrlFor(target, platform);
+  const web = browserUrl && /^https?:/i.test(browserUrl) ? browserUrl : null;
+  const gmailBrowser = isMobilePlatform(platform) && isGmailMobileWebLink(url);
+  const mailbox = gmailBrowser && url ? new URL(url).searchParams.get("authuser") : null;
 
   useEffect(() => () => cleanup.current(), []);
 
@@ -72,6 +76,9 @@ export function OpenButton({ label, target, accent, preference = "auto", variant
       {state === "opening" ? <Loader2 className="size-[18px] shrink-0 animate-spin" /> : <ArrowUpRight className="size-[18px] shrink-0" />}
     </a>
     {hint ? <p className="px-1 text-[12px]" style={{ color: "var(--text-3)" }}>{hint}</p> : null}
+    {gmailBrowser ? <p className="px-1 text-[12px]" style={{ color: "var(--text-3)" }}>
+      Opens in your browser{mailbox ? ` · ${mailbox}` : ""}. Gmail’s phone app cannot reliably open a selected conversation.
+    </p> : null}
     {alternate ? <a href={alternate.url} target={alternate.kind === "web" ? "_blank" : undefined} rel="noopener noreferrer"
       onClick={event => open(event, alternate.url)} className="block px-1 text-[12.5px] font-semibold underline underline-offset-2" style={{ color: "var(--text-3)" }}>
       {alternate.kind === "app" ? "Open in the app instead" : "Open in the browser instead"}

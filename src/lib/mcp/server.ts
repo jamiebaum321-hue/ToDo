@@ -69,12 +69,12 @@ export async function buildInstructions(actor: Actor): Promise<string> {
     "",
     "Every task should carry a `source` with the provider's own ids and URL, so the app can put a button on the card that opens the exact email, message or meeting. That button is the whole point of the app, and a link that lands on a generic inbox is worse than no link at all. These rules are field-tested — real people tapped real tasks:",
     "",
-    "- **Gmail** — `source.threadId` is REQUIRED (every `messages.get` returns one): it is the only id that lands ON the conversation, in the browser and in the Gmail app alike. Also send `source.messageId` (the RFC-822 `Message-ID` header) as the durable fallback, and always `source.account`.",
+    "- **Gmail** — send the actual `source.threadId` and `source.account`. ToDo builds separate desktop and mobile website conversation URLs. Gmail's phone app does not reliably open a selected thread by URL. Also send `source.messageId` (the RFC-822 `Message-ID` header) for a search fallback in the same mailbox.",
     "- **Outlook / Graph** — the message's `webLink` in `source.url`, UNTOUCHED — it is the one browser link that opens the thread. The Graph id in `source.externalId`, the mailbox in `source.account`, and default Graph ids only (never `Prefer: IdType=\"ImmutableId\"`; links built from immutable ids do not resolve).",
     ACTION_GUIDANCE,
-    "- **Meeting invites you want accepted** — Accept/Decline live on the INVITE EMAIL, not the calendar entry: a phone tapping a calendar deep link just opens the mail app on the wrong screen (field-tested). So send the invite EMAIL as `source` (provider `outlook` or `gmail`, with its own id and webLink) and add the event as a `links` entry with kind `calendar` carrying the event's own link (`webLink` on a Graph event, `htmlLink` from Google Calendar). The user then gets the RSVP buttons on the main button, and the calendar as the second.",
+    "- **Meeting invites you want accepted** — for native Outlook RSVP, send the actual invitation EMAIL as `source`, with its own message id and webLink. Add the event separately as a `links` entry with kind `calendar`, carrying the event's own `webLink` or `htmlLink`. The calendar action uses the provider website and may require browser sign-in even when the mail app is signed in. Verify that the invitation has response controls; do not substitute an event id into a mail app link.",
     "- **Teams, Slack, Zoom** — the permalink in `source.url`; the app derives the app links from it.",
-    "- **Do not invent app links.** Send https URLs and ids; the app builds the `ms-outlook://` and `googlegmail:///` handoffs itself, and it only keeps shapes a real device confirmed. Anything else it drops in favour of the browser link, so a hand-written scheme is at best ignored and at worst the thing that opened the app on the wrong screen.",
+    "- **Do not invent app links.** Send provider https URLs and item identities. ToDo selects the available app or website route. A successful app launch does not prove that the correct conversation, draft, or event opened.",
   ].join("\n");
 }
 
@@ -88,9 +88,9 @@ Every task should carry a \`source\` with the provider's own ids and URL, so the
 
 That button is the whole point of the app, and a link that lands on a generic inbox is worse than no link at all, so spend the extra call to get the ids right (these rules are field-tested):
 
-- **Gmail** — \`source.threadId\` is REQUIRED (every \`messages.get\` returns one): the only id that lands ON the conversation, in the browser and in the Gmail app alike. Also send \`source.messageId\` (the RFC-822 \`Message-ID\` header, from \`payload.headers\`) as the durable fallback, and always \`source.account\` — Gmail numbers accounts by browser sign-in order, so without the address the link can open the wrong mailbox.
+- **Gmail** — send the actual \`source.threadId\` and \`source.account\`. ToDo builds separate desktop and mobile website conversation URLs; Gmail's phone app does not reliably open a selected conversation by URL. Also send \`source.messageId\` (the RFC-822 \`Message-ID\` header) for a search fallback in the same mailbox. Never infer the mailbox from ToDo's login email or browser account order.
 - **Outlook / Graph** — send the message's \`webLink\` in \`source.url\`, untouched; the message id in \`source.externalId\`; the mailbox in \`source.account\`. Default Graph ids only — never \`Prefer: IdType="ImmutableId"\`; links built from immutable ids do not resolve.
-- **Meeting invites you want accepted** — Accept/Decline live on the INVITE EMAIL, not the calendar entry, so send that email as \`source\` and add the event as a \`links\` entry with kind \`calendar\` (\`webLink\` on a Graph event, \`htmlLink\` from Google Calendar).
+- **Meeting invites you want accepted** — for native Outlook RSVP, send the actual invitation EMAIL as \`source\`, with its own message id and webLink. Add the event separately as a \`links\` entry with kind \`calendar\` (\`webLink\` on a Graph event, \`htmlLink\` from Google Calendar). The calendar website may require browser sign-in. Verify the invitation's response controls; never use a calendar-event id in a mail app link.
 - **Teams, Slack, Zoom** — send the permalink in \`source.url\`; the app derives the desktop and mobile app links from it.
 
 If a connector hands you a canonical URL, pass it in \`source.url\` — a real permalink always beats one the app has to reconstruct.

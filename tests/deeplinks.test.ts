@@ -116,11 +116,34 @@ describe("deriveLinkTarget", () => {
     expect(t.web).toBe("https://mail.google.com/mail/#all/18c9f0");
   });
 
-  it("hands Gmail mobile to the app when the thread id is known", () => {
-    // googlegmail:///cv= is undocumented but field-confirmed to open the app
-    // on the exact thread; the button falls back to the browser if not.
-    const t = deriveLinkTarget({ provider: "gmail", threadId: "18c9f0", account: "j@w.com" });
-    expect(t.mobile).toBe("googlegmail:///cv=18c9f0");
+  it.each(["auto", "app", "web"] as const)("uses the mobile Gmail conversation route with the %s preference", (preference) => {
+    const t = deriveLinkTarget({ provider: "gmail", threadId: "18c9f0", account: "j@w.com", mobile: "googlegmail:///cv=18c9f0", desktop: "googlegmail:///cv=18c9f0" });
+    const mobile = "https://mail.google.com/mail/mu/?authuser=j%40w.com#cv/All%20Mail/18c9f0";
+    expect(t.mobile).toBe(mobile);
+    expect(t.desktop).toBeNull();
+    for (const platform of ["ios", "android"] as const) {
+      expect(chooseUrl(t, platform, preference)).toBe(mobile);
+      expect(alternateFor(t, mobile, platform)).toBeNull();
+    }
+    expect(chooseUrl(t, "windows", preference)).toBe(t.web);
+    expect(t.web).toContain("#all/18c9f0");
+  });
+
+  it("replaces stale mobile inbox links with the source's own conversation", () => {
+    const t = deriveLinkTarget({ provider: "gmail", threadId: "18c9f0", account: "j@w.com", mobile: "https://mail.google.com/mail/#inbox" });
+    expect(t.mobile).toBe("https://mail.google.com/mail/mu/?authuser=j%40w.com#cv/All%20Mail/18c9f0");
+  });
+
+  it("derives a mobile website route from a legacy account-qualified thread link", () => {
+    const t = deriveLinkTarget({ provider: "gmail", web: "https://mail.google.com/mail/?authuser=j%40w.com#all/18c9f0" });
+    expect(t.mobile).toBe("https://mail.google.com/mail/mu/?authuser=j%40w.com#cv/All%20Mail/18c9f0");
+  });
+
+  it("preserves the mailbox in a provider URL when only a thread id was supplied separately", () => {
+    const web = "https://mail.google.com/mail/?authuser=owner%40example.com#all/18c9f0";
+    const t = deriveLinkTarget({ provider: "gmail", threadId: "18c9f0", web });
+    expect(t.web).toBe(web);
+    expect(t.mobile).toBe("https://mail.google.com/mail/mu/?authuser=owner%40example.com#cv/All%20Mail/18c9f0");
   });
 
   it("keeps the https link for Gmail on mobile when no thread id exists", () => {

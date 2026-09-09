@@ -116,7 +116,9 @@ first account is trusted, so a self-hosted instance still works out of the box.
 their place by doing what a browser tab cannot: **notifications on iOS**, which
 Safari grants only to home-screen installs and never inside a webview, plus
 universal links that open a task straight from a notification, and hand-off to
-the real Outlook or Gmail app when you tap "Open in".
+Outlook messages and prefilled Gmail/Outlook delegation composers. Gmail source
+conversations and saved replies use its mobile website because the Gmail app
+does not reliably accept exact-conversation links.
 
 Both platforms notify through Firebase — one integration, one code path, and
 Firebase forwards to APNs for iOS. Web push still covers browsers and installed
@@ -257,7 +259,7 @@ A provider URL is preserved where possible. Gmail's exact conversation is rebuil
 | Provider | Browser | Desktop | Phone |
 | --- | --- | --- | --- |
 | Outlook | Provider's Graph `webLink` | Browser | Source message in Outlook, with browser alternative |
-| Gmail | `mail.google.com/mail/?authuser=…#all/<threadId>` | Browser | Gmail conversation scheme, with browser alternative |
+| Gmail | `mail.google.com/mail/?authuser=…#all/<threadId>` | Browser | Mobile website: `/mail/mu/?authuser=…#cv/All%20Mail/<threadId>` |
 | Teams | the permalink | `msteams:/l/message/…` | `msteams:/l/message/…` |
 | Zoom | `zoom.us/j/…` | `zoommtg://…` | `zoommtg://…` |
 | Slack | `…slack.com/archives/…` | `slack://channel?…` | `slack://channel?…` |

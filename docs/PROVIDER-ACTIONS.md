@@ -73,7 +73,7 @@ Opening email leaves the task open. Only **I've sent it — mark handed off** re
 
 | Action | Computer | Phone |
 | --- | --- | --- |
-| Gmail reply | Account-qualified conversation URL | Existing Gmail conversation scheme, with browser alternative |
+| Gmail reply | Account-qualified conversation URL | Account-qualified mobile website conversation route |
 | Outlook reply | Provider draft webLink; original email separately | Source conversation in Outlook, with browser alternative |
 | New delegation | Gmail/Outlook prefilled web composer | Provider compose scheme, with browser alternative |
 | Outlook RSVP | Invite email with Accept/Decline controls | Invite email in Outlook; browser alternative |
@@ -82,7 +82,11 @@ Opening email leaves the task open. Only **I've sent it — mark handed off** re
 
 Send an Outlook invitation **email** as the source, the event as a separate `kind: "calendar", provider: "outlook_calendar"` link, and a Teams join link as `kind: "join"`. Each link keeps its own IDs. Joining a meeting is not accepting an invitation.
 
-Native mail URL schemes are best-effort handoffs, not supported guarantees that a particular screen opened. Gmail's conversation scheme is undocumented. The existing repository records device observations, but the September 2026 changes were not validated on physical iOS/Android devices or installed Outlook/Teams clients. A browser can detect a handoff attempt, not whether the destination found the message. The browser alternative therefore stays visible, including after an apparent successful app launch. Native Outlook calendar navigation is not claimed: the invite email provides RSVP, with the calendar event available through its webLink.
+The September 8 iPhone recording disproved the old Gmail `googlegmail:///cv=` assumption: the app opened only its inbox. Its desktop `#all/` fallback also lost the conversation when Gmail redirected to mobile web. Gmail source and saved-draft actions now use `/mail/mu/?authuser=<mailbox>#cv/All%20Mail/<threadId>`, derived from Gmail's own mobile All Mail navigation. This opens the mobile website, not the native Gmail app. The UI states that distinction; even the browser preference uses the mobile route on a phone. Old task and draft links are repaired when read, without changing their content or completion state. The native compose route for a newly selected delegate is separate and remains available.
+
+[Todoist's Gmail integration documentation](https://www.todoist.com/help/todoist/integrations/use-gmail-with-todoist-YMVdMcAx) also records that Gmail email links open in a browser rather than its iOS/Android apps. Browser emulation can verify the website's routes, account selection, and visible reply controls; it cannot verify native Gmail behavior on a physical phone. Keep those results separate.
+
+The recording opened two specific messages in native Outlook. The calendar web action required Microsoft sign-in in Safari, which is independent of native Outlook sign-in. Native Outlook calendar navigation is not claimed: use the invitation email for RSVP and retain the event's webLink separately. Teams reached a guest pre-join screen in the recording; the exact meeting identity was not visible. A successful app launch alone never proves that the requested conversation, saved draft, or event was reached.
 
 Teams URLs preserve tenant and conversation context. Use the message's **Copy link** action; the browser address bar may only identify the app. Both `teams.microsoft.com/l/...` and the `teams.cloud.microsoft/l/...` links copied by the current Teams UI are recognized. ToDo retains the original web link and derives the corresponding app path without rewriting its message context. [Teams deep links](https://learn.microsoft.com/en-us/microsoftteams/platform/concepts/build-and-test/deep-link-teams).
 

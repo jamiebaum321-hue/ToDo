@@ -4,7 +4,9 @@ import { deriveLinkTarget } from "./deeplinks";
 import { hasMailboxUiReplyIdentity, isReplyDraft } from "./drafts";
 import {
   buildGmailWebUrl,
-  gmailMobileLink,
+  gmailAccountFromWeb,
+  gmailMobileWebLink,
+  gmailMobileWebFromWeb,
   isCustomScheme,
   isOutlookScheme,
   isVerifiedScheme,
@@ -150,36 +152,21 @@ function serializeLink(link: TaskLink, ids: MailIds): TaskLinkDTO {
 }
 
 const isGmailUrl = (u: string | null) => !!u && /^https?:\/\/mail\.google\.com\//i.test(u);
-const isGmailScheme = (u: string | null) => !!u && u.startsWith("googlegmail:");
 /** The blank-composer shape: Gmail wants its own compose token, not an API draft id. */
 const isGmailComposeUrl = (u: string | null) => !!u && isGmailUrl(u) && /[?&#]compose=/i.test(u);
 
 /**
- * Legacy-safe link slots, repaired from stored IDS rather than by parsing
- * URLs. Every rule here was written by a real device failing:
- *
- * - Gmail's app scheme resolves ONLY a real thread id — a cv= link built from
- *   a message id opened the app on "failed to open link" — so it comes from
- *   the stored thread id or not at all, and a stored cv= that disagrees with
- *   that id is discarded as that same bug.
- * - A rfc822msgid search lands on a results list, so with a thread id known
- *   the web link is rebuilt to land ON the conversation.
- * - `#drafts?compose=<draft id>` opened an empty composer; with no thread id
- *   to aim at, do not advertise an exact draft action.
- * - A reply draft lives inside its conversation, so draft buttons aim there:
- *   Gmail web + app via the thread, the Outlook app via the SOURCE message.
- *   A draft never derives its app link from its own web link — that produced
- *   an app handoff carrying a draft id, i.e. "message not found".
- * - Only app schemes proven on a device survive at all (isVerifiedScheme);
- *   an agent-supplied ms-outlook://events/open was found live, opening
- *   Outlook on the wrong screen. The https link always works, so it wins.
- * - Outlook message schemes are omitted on desktop. Teams retains its app
- *   permalink, with the corresponding web link available as an alternative.
+ * Repair existing rows on read without changing task or draft state. Gmail
+ * needs separate desktop/mobile website routes with the same account and
+ * conversation. Its old cv= app scheme opened the inbox on the user's iPhone.
+ * Outlook reply drafts use the source message for the mobile app handoff;
+ * passing a draft id there failed. Calendar ids never become mail schemes.
  */
 function mailSlots(webUrl: string | null, desktopUrl: string | null, mobileUrl: string | null, ids: MailIds = {}) {
   let web = normalizeMailLink(webUrl);
 
   const gmailish = ids.provider === "gmail" || isGmailUrl(web);
+  const account = ids.account ?? gmailAccountFromWeb(web);
   const thread = ids.threadId?.trim() || null;
   const isDraft = ids.kind === "draft";
   // A calendar item is not a message: its id in the mail app's scheme is just
@@ -192,7 +179,7 @@ function mailSlots(webUrl: string | null, desktopUrl: string | null, mobileUrl: 
   if (gmailish && (web === null || isGmailUrl(web))) {
     const rebuilt = buildGmailWebUrl({
       threadId: thread,
-      account: ids.account,
+      account,
       kind: isDraft ? "draft" : undefined,
     });
     // With a thread id, land on the conversation. Without one, the only thing
@@ -204,13 +191,14 @@ function mailSlots(webUrl: string | null, desktopUrl: string | null, mobileUrl: 
     ids.provider === "outlook" && isDraft && ids.outlookItemId
       ? outlookMobileLink(toOutlookRestId(ids.outlookItemId))
       : null;
-  const gmailApp = gmailish && thread ? gmailMobileLink(thread) : null;
-  const scheme = isCalendar ? null : isDraft ? (outlookAnchor ?? gmailApp) : (outlookSchemeFromWeb(web) ?? gmailApp);
+  const gmailMobile = gmailish
+    ? thread ? gmailMobileWebLink(thread, account) : gmailMobileWebFromWeb(web, account)
+    : null;
+  const scheme = isCalendar ? null : isDraft ? outlookAnchor : outlookSchemeFromWeb(web);
 
   const real = (slot: string | null) => (slot && slot !== webUrl && slot !== web ? slot : null);
   let storedMobile = real(mobileUrl);
   if (isCustomScheme(storedMobile) && !isVerifiedScheme(storedMobile)) storedMobile = null;
-  if (isGmailScheme(storedMobile) && storedMobile !== gmailApp) storedMobile = null;
   // Older rows encoded Outlook IDs with the standard base64url alphabet.
   // Prefer the message identity recovered from its provider webLink.
   if (isOutlookScheme(storedMobile) && scheme && storedMobile !== scheme) storedMobile = null;
@@ -222,7 +210,7 @@ function mailSlots(webUrl: string | null, desktopUrl: string | null, mobileUrl: 
   return {
     web,
     desktop: (isCustomScheme(storedDesktop) && (/^ms-outlook:/i.test(storedDesktop ?? "") || !isVerifiedScheme(storedDesktop)) ? null : storedDesktop) ?? teams?.desktop ?? null,
-    mobile: isCalendar ? web : storedMobile ?? scheme ?? teams?.mobile ?? (isCustomScheme(mobileUrl) ? web : mobileUrl),
+    mobile: isCalendar ? web : gmailish ? gmailMobile ?? web : storedMobile ?? scheme ?? teams?.mobile ?? (isCustomScheme(mobileUrl) ? web : mobileUrl),
   };
 }
 
@@ -298,8 +286,8 @@ export function serializeTask(task: TaskWithRelations, opts?: { includeDrafts?: 
             to: task.draft.to,
             verifiedAt: task.draft.verifiedAt?.toISOString() ?? null,
             // A reply draft rides its thread, so the draft button gets the
-            // same repairs as the source button — and on a phone it opens
-            // the conversation in the app, where the draft is waiting.
+            // same repairs as the source button, preserving the mailbox and
+            // conversation that actually contains the saved reply.
             ...(draftReady ? mailSlots(task.draft.webUrl, task.draft.desktopUrl, task.draft.mobileUrl, {
               threadId: task.draft.threadId,
               account: task.draft.account,

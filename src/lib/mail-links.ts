@@ -4,8 +4,7 @@
  * Pure functions, no dependencies, safe to run server-side at write time — so
  * every client gets corrected links instead of each one re-deriving them.
  *
- * Every rule in here is field-tested, and one earlier rule was reversed by
- * that testing, so the evidence is worth recording:
+ * Provider routing observations and their limits:
  *
  * 1. Gmail `/u/<n>/` is never emitted. The index numbers accounts by the order
  *    they were signed into one particular browser, so the same link opens a
@@ -43,18 +42,13 @@ export function isOutlookScheme(url: string | null | undefined): boolean {
 }
 
 /**
- * The custom schemes a real device actually opened something with.
- *
- * Everything else is a guess, and guesses cost more than they pay: a live
- * account was found carrying `ms-outlook://events/open?restId=…` (the agent
- * supplied it; the app never builds it) which opened Outlook on the wrong
- * screen, and a drafts scheme built from a draft id, which opened the app on
- * "message not found". A link the app cannot vouch for is worse than no app
- * link at all, because the https fallback always works.
+ * Allowlisted navigation schemes. A successful app launch does not prove
+ * that the requested item opened. In particular, the September 8 iPhone
+ * recording shows googlegmail:///cv= opening only the inbox, even with the
+ * correct thread id. It must not be emitted or restored from old rows.
  */
 const VERIFIED_SCHEMES: RegExp[] = [
   /^ms-outlook:\/\/emails\/message\?restId=/i,
-  /^googlegmail:\/\/\/cv=/i,
   /^msteams:\/l\//i,
   /^slack:\/\/channel\?/i,
   /^zoommtg:\/\//i,
@@ -171,26 +165,48 @@ export function gmailBase(account?: string | null): string {
       "https://mail.google.com/mail/";
 }
 
-/**
- * The Gmail app's conversation-view scheme. Undocumented by Google, but
- * field-confirmed on a real phone to open the app on the exact thread — and
- * the button behind it falls back to the browser if nothing answers, so the
- * worst case is what happened before this existed.
- */
-export function gmailMobileLink(threadId: string): string {
-  return `googlegmail:///cv=${encodeURIComponent(threadId)}`;
+/** Recover a mailbox identity from a provider URL, never from /u/<index>/. */
+export function gmailAccountFromWeb(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || parsed.hostname !== "mail.google.com" || !parsed.pathname.startsWith("/mail/")) return null;
+    const account = parsed.searchParams.get("authuser");
+    return account?.includes("@") ? account.trim() : null;
+  } catch {
+    return null;
+  }
 }
 
-const GMAIL_THREAD_WEB = /mail\.google\.com\/mail\/[^#]*#(?:all|inbox)\/([^/?&#]+)/i;
+/**
+ * Gmail's mobile WEBSITE conversation route, observed by navigating All Mail
+ * in Gmail itself. Desktop #all/<id> fragments are lost by its mobile UI.
+ * Start at /mu/ so Gmail resolves its own /mp/<session>/ path; never store
+ * that path or an account index. This is a browser workaround, not an app link.
+ */
+export function gmailMobileWebLink(threadId: string, account?: string | null): string {
+  const base = gmailBase(account).replace("/mail/", "/mail/mu/");
+  return `${base}#cv/All%20Mail/${encodeURIComponent(threadId.trim())}`;
+}
 
 /**
- * The app handoff derived from a stored browser link, for rows written before
- * the scheme existed. Only #all/<threadId> links qualify — a rfc822msgid
- * search has no thread id to give the app.
+ * Upgrade legacy desktop links only when they contain a Gmail API thread id.
+ * Opaque Gmail UI tokens and search results are not mobile conversation ids.
  */
-export function gmailSchemeFromWeb(url: string | null | undefined): string | null {
-  const m = url?.match(GMAIL_THREAD_WEB);
-  return m ? gmailMobileLink(decodeURIComponent(m[1])) : null;
+export function gmailMobileWebFromWeb(url: string | null | undefined, account?: string | null): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || parsed.hostname !== "mail.google.com" || !parsed.pathname.startsWith("/mail/")) return null;
+    const thread = parsed.hash.match(/^#(?:all|inbox)\/([a-f0-9]+)$/i)?.[1];
+    return thread ? gmailMobileWebLink(thread, account ?? gmailAccountFromWeb(url)) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isGmailMobileWebLink(url: string | null | undefined): boolean {
+  return !!url && /^https:\/\/mail\.google\.com\/mail\/mu\/(?:\?[^#]*)?#cv\/All%20Mail\//i.test(url);
 }
 
 export function buildGmailWebUrl(input: GmailUrlInput): string | null {
@@ -268,7 +284,7 @@ export function assertSafeMailLink(url: string, opts: { allowOutlookScheme?: boo
   }
   if (isCustomScheme(url) && !isVerifiedScheme(url)) {
     throw new Error(
-      `Unverified app-scheme link: ${url} — only shapes proven on a real device are stored (ms-outlook://emails/message, googlegmail:///cv=, msteams:/l/, slack://channel, zoommtg://). Send the https link instead; it always opens.`,
+      `Unverified app-scheme link: ${url} — send the provider's https URL and item identity instead. Gmail conversation schemes open the inbox on iPhone; use the mailbox-qualified mobile web conversation route.`,
     );
   }
   if (OUTLOOK_SCHEME.test(url) && !opts.allowOutlookScheme) {
