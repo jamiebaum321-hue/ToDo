@@ -45,7 +45,7 @@ const SOURCE_SCHEMA = {
       "The provider's own id for the item — a Microsoft Graph message id, a Gmail message id, a Zoom meeting number. This is what makes the task stable across runs.",
     ),
     messageId: str(
-      "For Gmail, send the RFC-822 Message-ID header when available (payload.headers in the Gmail API). It provides a search fallback in the same mailbox; it does not replace the actual threadId or work in an unrelated account.",
+      "For Gmail, fetch and send the RFC-822 Message-ID header (payload.headers in the Gmail API). It enables the optional Apple Mail source-message action on iPhone and a Gmail search fallback. It does not replace the actual threadId. Never substitute a Gmail API id or claim a draft opened from this header alone.",
     ),
     threadId: str(
       "REQUIRED for Gmail: the actual threadId returned by messages.get, paired with its mailbox account. ToDo builds separate desktop and mobile website conversation URLs. Gmail's phone app does not reliably support opening a conversation by URL; never claim that launching the app verified the thread or saved reply.",

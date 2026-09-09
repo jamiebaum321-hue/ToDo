@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  appleMailMessageLink,
   assertSafeMailLink,
   isCustomScheme,
   isVerifiedScheme,
@@ -28,6 +29,16 @@ const REAL_WEBLINK =
   "https://outlook.office365.com/owa/?ItemID=AAMkADRlY2ZjZGQx%2BrywUxVqo%2FAAA4T%2FVnAAA%3D&exvsurl=1&viewmodel=ReadMessageItem";
 
 const RETIRED_DEEPLINK = "https://outlook.office.com/mail/deeplink/read/AAMkADRlY2ZjZGQx_rywUxVqo-AAA4T-VnAAA%3D";
+
+describe("Apple Mail source-message handoff", () => {
+  it("preserves and encodes the actual Message-ID, including its angle brackets", () => {
+    expect(appleMailMessageLink("<receipt+part/1=2@example.com>")).toBe("message://%3Creceipt%2Bpart%2F1%3D2%40example.com%3E");
+    expect(appleMailMessageLink(" receipt@example.com ")).toBe("message://%3Creceipt%40example.com%3E");
+  });
+  it.each([null, "", "1a036f10a19002a6", "draft-1", "<missing-close@example.com", "one@example.com two@example.com", "<one@example.com>\r\nBcc: another@example.com", "https://example.com/email@elsewhere", "a".repeat(400) + "@example.com"])("omits a handoff for a missing, malformed, or non-mail identifier: %s", id => {
+    expect(appleMailMessageLink(id)).toBeNull();
+  });
+});
 
 describe("gmail: resolve the mailbox by identity, never by index", () => {
   it("builds ?authuser= from the address", () => {
