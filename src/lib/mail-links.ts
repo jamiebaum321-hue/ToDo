@@ -165,6 +165,21 @@ export function gmailBase(account?: string | null): string {
       "https://mail.google.com/mail/";
 }
 
+/**
+ * Apple Mail's message: handoff uses the RFC Message-ID, not a Gmail API id.
+ * The mailbox/message must be available in Mail. This opens the source email;
+ * it is not evidence that a saved reply will open for editing on the device.
+ */
+export function appleMailMessageLink(messageId: string | null | undefined): string | null {
+  const value = messageId?.trim();
+  if (!value || value.length > 400) return null;
+  const id = value.startsWith("<") && value.endsWith(">") ? value.slice(1, -1) : value;
+  // Only accept a single, printable Message-ID. In particular, never substitute
+  // an API thread/draft id or accept an entire URL as the identifier.
+  if (!/^[^<>@\s\u0000-\u001f\u007f]+@[^<>@\s\u0000-\u001f\u007f]+$/.test(id) || id.includes("://")) return null;
+  return `message://${encodeURIComponent(`<${id}>`)}`;
+}
+
 /** Recover a mailbox identity from a provider URL, never from /u/<index>/. */
 export function gmailAccountFromWeb(url: string | null | undefined): string | null {
   if (!url) return null;

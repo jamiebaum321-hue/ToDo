@@ -3,6 +3,7 @@ import { getBucket, type BucketKey } from "./buckets";
 import { deriveLinkTarget } from "./deeplinks";
 import { hasMailboxUiReplyIdentity, isReplyDraft } from "./drafts";
 import {
+  appleMailMessageLink,
   buildGmailWebUrl,
   gmailAccountFromWeb,
   gmailMobileWebLink,
@@ -72,6 +73,8 @@ export interface TaskDTO {
     accent: string;
     type: string | null;
     account: string | null;
+    /** Optional source-email handoff for users who also sync Gmail in Apple Mail. */
+    appleMailUrl?: string | null;
     from: string | null;
     subject: string | null;
     snippet: string | null;
@@ -266,6 +269,7 @@ export function serializeTask(task: TaskWithRelations, opts?: { includeDrafts?: 
       accent: source.accent,
       type: task.sourceType,
       account: task.sourceAccount,
+      appleMailUrl: task.sourceProvider === "gmail" ? appleMailMessageLink(task.sourceMessageId) : null,
       from: task.sourceFrom,
       subject: task.sourceSubject,
       snippet: task.sourceSnippet,

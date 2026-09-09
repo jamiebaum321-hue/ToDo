@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { Check, ChevronDown, Clock, FolderInput, Forward, Pin, Trash2, X } from "lucide-react";
 import type { TaskDTO } from "@/lib/client/types";
 import type { LinkPreference } from "@/lib/deeplinks";
+import { browserUrlFor } from "@/lib/deeplinks";
+import { usePlatform } from "@/hooks/usePlatform";
 import { relativeLabel } from "@/lib/time";
 import { cn, displayName } from "@/lib/utils";
 import { bucketVars, BUCKET_ICON, PROVIDER_ICON } from "./icons";
@@ -47,6 +49,7 @@ export function TaskSheet({
 }: Props) {
   const [menu, setMenu] = useState<"none" | "snooze" | "move" | "delegate">("none");
   const [showDraft, setShowDraft] = useState(false);
+  const { platform } = usePlatform();
 
   const vars = bucketVars(task.bucket);
   const BucketIcon = BUCKET_ICON[task.bucket] ?? BUCKET_ICON.delete;
@@ -69,6 +72,7 @@ export function TaskSheet({
 
   const sourceLink = task.links.find((l) => l.kind === "source") ?? task.links[0] ?? null;
   const primaryDraft = task.draft?.ready && isReplyDraft(task.draft.kind) ? task.draft : null;
+  const appleMailUrl = platform === "ios" ? task.source.appleMailUrl : null;
   const extraLinks = task.links.filter((l) => l !== sourceLink && l.kind !== "draft");
 
   return (
@@ -200,6 +204,14 @@ export function TaskSheet({
                 icon={<ProviderIcon className="size-[18px] shrink-0" strokeWidth={2.4} />}
               />
             ) : null}
+
+            {appleMailUrl ? <OpenButton
+              label="Open original in Apple Mail"
+              target={{ mobile: appleMailUrl, web: sourceLink ? browserUrlFor(sourceLink, platform) : null }}
+              preference="app"
+              variant="secondary"
+              hint="This mailbox must be added to Apple Mail, with the email downloaded."
+            /> : null}
 
             {task.draft ? (
               <div className="space-y-2">

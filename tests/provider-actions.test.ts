@@ -17,6 +17,28 @@ const sync = (task: Record<string, unknown>) => syncTasks(userId, syncInput.pars
 const stored = () => prisma.task.findFirstOrThrow({ where: { userId }, include: taskInclude });
 
 describe("provider actions through sync, storage and serialization", () => {
+  it("adds Apple Mail as a source-only option without changing Gmail or its saved delegation draft", async () => {
+    await sync({ source: { ...source, messageId: "<original@example.com>" }, draft: { ...saved, kind: "new", to: "topaz@example.com", threadId: "handoff-thread" } });
+    const task = await stored();
+    const before = structuredClone(task);
+    const dto = serializeTask(task);
+    expect(dto.source.appleMailUrl).toBe("message://%3Coriginal%40example.com%3E");
+    expect(dto.links[0].mobile).toContain("#cv/All%20Mail/t-original");
+    expect(dto.draft).toMatchObject({ ready: true, body: saved.body, to: "topaz@example.com" });
+    expect(dto.draft?.mobile).toContain("#cv/All%20Mail/handoff-thread");
+    expect(dto.draft).not.toHaveProperty("appleMailUrl");
+    expect(dto.status).toBe("open");
+    expect(task).toEqual(before);
+    expect(await stored()).toEqual(task);
+  });
+  it("does not invent an Apple Mail identifier from a Gmail thread or another provider", async () => {
+    await sync({ draft: saved });
+    const task = await stored();
+    expect(serializeTask(task).source.appleMailUrl).toBeNull();
+    expect(serializeTask({ ...task, sourceMessageId: "not-an-rfc-message-id" }).source.appleMailUrl).toBeNull();
+    expect(serializeTask({ ...task, sourceProvider: "outlook", sourceMessageId: "<outlook@example.com>" }).source.appleMailUrl).toBeNull();
+  });
+
   it.each(["googlegmail:///cv=t-original", "googlegmail:///cv=wrong", "https://mail.google.com/mail/#inbox"])("repairs a legacy Gmail handoff %s without changing its saved draft or task", async (legacy) => {
     await sync({ draft: { ...saved, to: "vendor@example.com", subject: "Re: Proposal" } });
     const task = await stored();
