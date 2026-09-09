@@ -1,7 +1,9 @@
 import { normalizeProvider, resolveLinkProvider, type ProviderKey } from "./providers";
 import {
   buildGmailWebUrl,
-  gmailMobileLink,
+  gmailAccountFromWeb,
+  gmailMobileWebLink,
+  gmailMobileWebFromWeb,
   isCustomScheme,
   isOutlookScheme,
   isVerifiedScheme,
@@ -140,25 +142,24 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
       break;
     }
     case "gmail": {
+      const account = clean(input.account) ?? gmailAccountFromWeb(out.web);
       if (input.threadId || !out.web) {
         out.web =
           buildGmailWebUrl({
             messageId: clean(input.messageId),
             threadId: clean(input.threadId),
             externalId: id,
-            account: clean(input.account),
+            account,
             kind,
           }) ?? undefined;
       }
-      // googlegmail:///cv=<threadId> is undocumented but field-confirmed to
-      // open the Gmail app on the exact thread; the button falls back to the
-      // browser when no app answers. Without a thread id (an rfc822msgid
-      // search, say) the https link is the best mobile link that exists —
-      // Android app links hand it to the app anyway.
-      if (!out.mobile) {
-        const thread = clean(input.threadId);
-        out.mobile = thread ? gmailMobileLink(thread) : (out.web ?? undefined);
-      }
+      // The iPhone recording disproved the old cv= app handoff. The mobile
+      // website has its own conversation route, including the mailbox identity.
+      // Rebuild it even when an older client supplied a stale app/inbox link.
+      const thread = clean(input.threadId);
+      out.mobile = thread
+        ? gmailMobileWebLink(thread, account)
+        : gmailMobileWebFromWeb(out.web, account) ?? out.web;
       break;
     }
     case "teams": {
@@ -230,8 +231,8 @@ export function deriveLinkTarget(input: DeriveInput): LinkTarget {
   // An app link this app did not build and cannot vouch for is worse than no
   // app link: a live account was found carrying an agent-supplied
   // ms-outlook://events/open (opened Outlook on the wrong screen) and a drafts
-  // scheme built from a draft id ("message not found"). Only shapes a real
-  // device confirmed are kept; the rest fall back to the browser, which works.
+  // scheme built from a draft id ("message not found"). Remove unsupported
+  // schemes and retain the provider website as an alternative.
   if (isCustomScheme(out.mobile) && !isVerifiedScheme(out.mobile)) out.mobile = out.web ?? undefined;
   if (isCustomScheme(out.desktop) && !isVerifiedScheme(out.desktop)) out.desktop = undefined;
   out.web = normalizeMailLink(out.web);
@@ -262,6 +263,12 @@ export function detectPlatform(ua?: string): Platform {
 
 export const isMobilePlatform = (p: Platform) => p === "ios" || p === "android";
 
+/** A mobile website URL is also the correct target for the browser preference. */
+export function browserUrlFor(target: LinkTarget, platform: Platform): string | null {
+  const mobile = clean(target.mobile);
+  return isMobilePlatform(platform) && isHttp(mobile) ? mobile : clean(target.web) ?? null;
+}
+
 /**
  * Pick the URL to actually open.
  *
@@ -278,7 +285,7 @@ export function chooseUrl(
   const desktop = clean(target.desktop) ?? null;
   const mobile = clean(target.mobile) ?? null;
 
-  if (preference === "web") return web;
+  if (preference === "web") return browserUrlFor(target, platform);
 
   const native = isMobilePlatform(platform) ? mobile : desktop;
   if (preference === "app") return native ?? web;
@@ -320,7 +327,7 @@ export function alternateFor(
   platform: Platform,
 ): { url: string; kind: "app" | "web" } | null {
   if (!chosen) return null;
-  const web = clean(target.web) ?? null;
+  const web = browserUrlFor(target, platform);
   const native = clean(isMobilePlatform(platform) ? target.mobile : target.desktop) ?? null;
 
   // Going to the app: offer the browser. Going to the browser: offer the app,

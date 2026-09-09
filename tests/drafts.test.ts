@@ -20,7 +20,7 @@ describe("saved draft contract", () => {
     const result = prepareDraft(input(saved));
     expect(result.issue).toBeNull();
     expect(result.row?.webUrl).toBe("https://mail.google.com/mail/?authuser=owner%40example.com#all/thread-original");
-    expect(result.row?.mobileUrl).toBe("googlegmail:///cv=thread-original");
+    expect(result.row?.mobileUrl).toBe("https://mail.google.com/mail/mu/?authuser=owner%40example.com#cv/All%20Mail/thread-original");
   });
   it("accepts an explicitly reopened Gmail reply without pretending to know its API draft id", () => {
     const result = prepareDraft(input(mailboxUi));
@@ -59,7 +59,7 @@ describe("saved draft contract", () => {
     const result = prepareDraft(input({ ...saved, kind: "new", threadId: "delegation-thread", to: "topaz@example.com" }));
     expect(result.issue).toBeNull();
     expect(result.row?.webUrl).toContain("#all/delegation-thread");
-    expect(result.row?.mobileUrl).toBe("googlegmail:///cv=delegation-thread");
+    expect(result.row?.mobileUrl).toBe("https://mail.google.com/mail/mu/?authuser=owner%40example.com#cv/All%20Mail/delegation-thread");
   });
   it("requires a delegate recipient instead of reusing a draft for somebody else", () => {
     expect(prepareDraft(input({ ...saved, kind: "forward" })).issue).toContain("draft.to");

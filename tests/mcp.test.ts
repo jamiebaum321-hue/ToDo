@@ -154,10 +154,10 @@ describe("tools", () => {
     const draft = await prisma.draft.findFirstOrThrow({ where: { taskId: task.id } });
     expect(draft.body).toBe("Hi Marta…");
     // A reply draft lives inside its conversation, so the button opens the
-    // thread — web and app alike. The old `#drafts?compose=<draft id>` link
+    // thread in desktop and mobile web. The old `#drafts?compose=<draft id>` link
     // field-tested as opening an empty compose window.
     expect(draft.webUrl).toContain("#all/t-marta");
-    expect(draft.mobileUrl).toBe("googlegmail:///cv=t-marta");
+    expect(draft.mobileUrl).toBe("https://mail.google.com/mail/mu/?authuser=j%40w.com#cv/All%20Mail/t-marta");
   });
 
   it("refuses attach_draft without a verified saved conversation", async () => {

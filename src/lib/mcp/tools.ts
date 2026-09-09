@@ -45,10 +45,10 @@ const SOURCE_SCHEMA = {
       "The provider's own id for the item — a Microsoft Graph message id, a Gmail message id, a Zoom meeting number. This is what makes the task stable across runs.",
     ),
     messageId: str(
-      "REQUIRED for Gmail if you can get it: the RFC-822 Message-ID header (Gmail API: the 'Message-ID' entry in payload.headers). It makes the only Gmail link that always resolves — it survives archiving, label moves and a different signed-in account. Without it the button often lands on the inbox instead of the thread.",
+      "For Gmail, send the RFC-822 Message-ID header when available (payload.headers in the Gmail API). It provides a search fallback in the same mailbox; it does not replace the actual threadId or work in an unrelated account.",
     ),
     threadId: str(
-      "REQUIRED for Gmail (every messages.get returns one): the only id that lands ON the conversation. The web link opens the thread directly with it, and the Gmail app deep link resolves ONLY a thread id — handed a message id the app says 'failed to open link' (field-tested). Without it the user gets a search page at best.",
+      "REQUIRED for Gmail: the actual threadId returned by messages.get, paired with its mailbox account. ToDo builds separate desktop and mobile website conversation URLs. Gmail's phone app does not reliably support opening a conversation by URL; never claim that launching the app verified the thread or saved reply.",
     ),
     account: str(
       "REQUIRED for mail: the authenticated mailbox address verified with the mail connector's profile, e.g. 'jamie@company.com'. It is NOT the ToDo login email. Keep it paired with the message/thread ids from that account. Gmail's /u/0/ numbering follows browser sign-in order, so using an index or the wrong address opens another inbox.",
@@ -238,7 +238,7 @@ export const TOOLS: ToolDefinition[] = [
             : null,
           guidance:
             "Build the full list for the window, then send it in ONE sync_tasks call with replace='window' only after a complete sweep. If a connector cannot be checked, use replace='none' to preserve existing tasks. Anything in alreadyHandled will be refused and reported back to you — do not re-raise those just because the original email is still sitting in the mailbox; only something genuinely new on the same item (a fresh reply, a moved deadline) justifies a new task, and a message you have already seen is not new evidence. Follow `houseRules` even where this run's prompt says nothing about them. " +
-            "Link rules, field-tested: Gmail needs source.threadId (the only id that opens the conversation in browser AND app) plus source.account; Outlook needs the Graph webLink untouched in source.url, with DEFAULT Graph ids (immutable ids break links). Reply drafts must be saved on the source thread; delegation drafts use their own recipient and conversation. Follow actionGuidance and verify saved drafts before attaching. For a meeting invite you want accepted, send the INVITE EMAIL as source (Accept/Decline live there — a calendar deep link opens a phone's mail app on the wrong screen) and add the event as a links[] entry kind 'calendar' with its own webLink/htmlLink. Never hand-write ms-outlook:// or googlegmail:// URLs: the app builds those itself and keeps only device-verified shapes.",
+            "Gmail needs source.threadId plus source.account for desktop and mobile website conversation links. Its phone app cannot reliably open a selected conversation by URL. Outlook needs the Graph webLink in source.url with DEFAULT Graph ids. Reply drafts must be saved on the source thread; delegation drafts use their own recipient and conversation. Follow actionGuidance and verify saved drafts before attaching. For RSVP, send the INVITE EMAIL as source and add the calendar event and Teams join URL as separate links. Never invent native mail or calendar schemes, and never treat launching an app as proof of reaching the item.",
         },
       );
     },

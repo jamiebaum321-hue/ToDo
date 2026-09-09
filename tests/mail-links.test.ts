@@ -4,8 +4,8 @@ import {
   isCustomScheme,
   isVerifiedScheme,
   outlookDraftsFolder,
-  gmailMobileLink,
-  gmailSchemeFromWeb,
+  gmailMobileWebLink,
+  gmailMobileWebFromWeb,
   buildGmailWebUrl,
   gmailBase,
   isOutlookScheme,
@@ -56,18 +56,19 @@ describe("gmail: resolve the mailbox by identity, never by index", () => {
     );
   });
 
-  it("builds the field-confirmed Gmail app scheme from a thread id", () => {
-    expect(gmailMobileLink("18c9f0")).toBe("googlegmail:///cv=18c9f0");
+  it("keeps the account and thread in Gmail's mobile website route", () => {
+    expect(gmailMobileWebLink("18c9f0", "j@w.com")).toBe("https://mail.google.com/mail/mu/?authuser=j%40w.com#cv/All%20Mail/18c9f0");
+    expect(gmailMobileWebLink("18c9f0")).toBe("https://mail.google.com/mail/mu/#cv/All%20Mail/18c9f0");
   });
 
-  it("derives the app scheme from a stored thread link, and only from one", () => {
-    expect(gmailSchemeFromWeb("https://mail.google.com/mail/?authuser=j%40w.com#all/18c9f0")).toBe(
-      "googlegmail:///cv=18c9f0",
+  it("upgrades stored desktop thread URLs without losing their account", () => {
+    expect(gmailMobileWebFromWeb("https://mail.google.com/mail/?authuser=j%40w.com#all/18c9f0")).toBe(
+      "https://mail.google.com/mail/mu/?authuser=j%40w.com#cv/All%20Mail/18c9f0",
     );
-    expect(gmailSchemeFromWeb("https://mail.google.com/mail/#all/18c9f0")).toBe("googlegmail:///cv=18c9f0");
-    // A search link has no thread id to hand the app.
-    expect(gmailSchemeFromWeb("https://mail.google.com/mail/#search/rfc822msgid:a%40b.c")).toBeNull();
-    expect(gmailSchemeFromWeb(null)).toBeNull();
+    expect(gmailMobileWebFromWeb("https://mail.google.com/mail/#inbox/18c9f0", "known@example.com")).toContain("authuser=known%40example.com#cv/All%20Mail/18c9f0");
+    for (const url of [null, "not a URL", "https://mail.google.com/mail/#all/FMfcOpaqueToken", "https://mail.google.com/mail/#search/rfc822msgid:a%40b.c", "https://mail.google.com.example.com/mail/#all/18c9f0"]) {
+      expect(gmailMobileWebFromWeb(url)).toBeNull();
+    }
   });
 
   it("leaves the authuser form alone — that one is correct", () => {
@@ -183,7 +184,7 @@ describe("app schemes: only the ones a device confirmed", () => {
 
   it("vouches only for the field-tested shapes", () => {
     expect(isVerifiedScheme("ms-outlook://emails/message?restId=abc")).toBe(true);
-    expect(isVerifiedScheme("googlegmail:///cv=t1")).toBe(true);
+    expect(isVerifiedScheme("googlegmail:///cv=t1")).toBe(false);
     expect(isVerifiedScheme("msteams:/l/message/19:abc")).toBe(true);
     // Found live on a real account, supplied by the agent: opened the Outlook
     // app on the wrong screen instead of the event.
@@ -201,7 +202,7 @@ describe("app schemes: only the ones a device confirmed", () => {
       /Unverified app-scheme/,
     );
     expect(() => assertSafeMailLink("ms-outlook://emails/message?restId=abc", { allowOutlookScheme: true })).not.toThrow();
-    expect(() => assertSafeMailLink("googlegmail:///cv=t1", { allowOutlookScheme: true })).not.toThrow();
+    expect(() => assertSafeMailLink("googlegmail:///cv=t1", { allowOutlookScheme: true })).toThrow(/Gmail conversation schemes open the inbox/);
   });
 
   it("builds an Outlook draft link with its own id and required view hint", () => {
